@@ -13,7 +13,7 @@ export default function AppShell() {
       <AppSidebar />
       <div className={cn(
         'flex flex-col flex-1 overflow-hidden transition-all duration-300',
-        sidebarOpen ? 'ml-[260px]' : 'ml-[72px]'
+        sidebarOpen ? 'md:ml-[256px]' : 'md:ml-[64px]'
       )}>
         <TopNav title={pageTitle} />
         <main className="flex-1 overflow-y-auto p-6">

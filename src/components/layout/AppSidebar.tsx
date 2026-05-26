@@ -39,9 +39,9 @@ export default function AppSidebar() {
 
   return (
     <motion.aside
-      animate={{ width: isCollapsed ? 72 : 260 }}
+      animate={{ width: isCollapsed ? 64 : 256 }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
-      className="fixed left-0 top-0 bottom-0 z-40 flex flex-col border-r border-border bg-bg-secondary"
+      className="hidden md:flex fixed left-0 top-0 bottom-0 z-40 flex-col border-r border-border bg-bg-secondary"
     >
       {/* Logo */}
       <div className="flex h-16 items-center gap-3 px-4 border-b border-border">
