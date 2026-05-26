@@ -170,7 +170,7 @@ AKO OBRAZAC NIJE UPLOADOVAN: APA koristi ustavni referentni dokument
 (1a_Projektni_Prijedlog_RADNI.pdf — KVS S.C.U.B.A., "Čista voda – zdrava zemlja")
 kao defaultni format predloška.
 
-⚠️ KRITIČNO [FIX-02]: Bez obzira na jezik obrasca, WA must pisati SVA imena
+⚠️ KRITIČNO [FIX-02]: Bez obzira na jezik obrasca, WA piše SVA imena
 sekcija u finalnom projektu ISKLJUČIVO NA BOSANSKOM. Obavezni prijevodi:
   Introduction → Uvod | Summary/Abstract → Sažetak
   Target Group → Ciljna grupa | Overall Objective → Sveukupni cilj projekta
