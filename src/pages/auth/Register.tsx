@@ -2,12 +2,28 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Mail, Lock, User } from "lucide-react";
+import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ParticleBackground from "@/components/auth/ParticleBackground";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+
+const registerSchema = z.object({
+  fullName: z.string().min(2, "Ime i prezime mora imati najmanje 2 znaka."),
+  email: z.string().email("Unesite ispravan email."),
+  password: z.string().min(8, "Lozinka mora imati najmanje 8 znakova."),
+  confirmPassword: z.string().min(8, "Potvrdite lozinku."),
+}).superRefine(({ password, confirmPassword }, ctx) => {
+  if (password !== confirmPassword) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Lozinke se ne podudaraju.",
+      path: ["confirmPassword"],
+    });
+  }
+});
 
 export default function Register() {
   const [fullName, setFullName] = useState("");
@@ -21,12 +37,15 @@ export default function Register() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      toast({ title: "Greška", description: "Lozinke se ne podudaraju.", variant: "destructive" });
-      return;
-    }
-    if (password.length < 8) {
-      toast({ title: "Greška", description: "Lozinka mora imati najmanje 8 znakova.", variant: "destructive" });
+
+    const parsed = registerSchema.safeParse({ fullName, email, password, confirmPassword });
+    if (!parsed.success) {
+      const firstError = parsed.error.errors[0];
+      toast({
+        title: "Greška pri registraciji",
+        description: firstError?.message || "Provjerite unesene podatke.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -37,17 +56,21 @@ export default function Register() {
         password,
         options: {
           data: { full_name: fullName },
-          emailRedirectTo: window.location.origin,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
       if (error) throw error;
       toast({
         title: "Registracija uspješna!",
-        description: "Provjerite svoju email adresu za verifikaciju.",
+        description: "Provjerite svoju email adresu i potvrdite račun prije prijave.",
       });
       navigate("/login");
     } catch (error: any) {
-      toast({ title: "Greška", description: error.message, variant: "destructive" });
+      let description = error.message || "Pokušajte ponovo kasnije.";
+      if (/duplicate|already exists|already registered/i.test(description)) {
+        description = "Ovaj email je već registrovan. Pokušajte prijavu ili resetujte lozinku.";
+      }
+      toast({ title: "Greška", description, variant: "destructive" });
     } finally {
       setLoading(false);
     }

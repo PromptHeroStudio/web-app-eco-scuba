@@ -26,11 +26,17 @@ export default function Login() {
       if (error) throw error;
       navigate("/dashboard");
     } catch (error: any) {
+      let description = error.message || "Pokušajte ponovo kasnije.";
+      if (description === "Invalid login credentials") {
+        description = "Pogrešan email ili lozinka.";
+      } else if (/email.*not.*confirmed|user.*not.*confirmed|not.*confirmed/i.test(description)) {
+        description = "Email nije verificiran. Provjerite inbox i potvrdite vašu email adresu.";
+      } else if (/network|fetch|connection/i.test(description)) {
+        description = "Mrežna greška. Provjerite internet konekciju i pokušajte ponovo.";
+      }
       toast({
         title: "Greška pri prijavi",
-        description: error.message === "Invalid login credentials"
-          ? "Pogrešan email ili lozinka."
-          : error.message,
+        description,
         variant: "destructive",
       });
     } finally {
@@ -40,7 +46,7 @@ export default function Login() {
 
   const handleGoogleLogin = async () => {
     const { error } = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+      redirect_uri: `${window.location.origin}/auth/callback`,
     });
     if (error) {
       toast({ title: "Greška", description: error.message, variant: "destructive" });

@@ -10,6 +10,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 
 const Login = lazy(() => import('@/pages/auth/Login'));
 const Register = lazy(() => import('@/pages/auth/Register'));
+const ForgotPassword = lazy(() => import('@/pages/auth/ForgotPassword'));
 const AuthCallback = lazy(() => import('@/pages/auth/AuthCallback'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const ProjectsList = lazy(() => import('@/pages/Projects'));
@@ -38,6 +39,7 @@ export default function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
 
               <Route element={<AuthGuard><AppShell /></AuthGuard>}>
