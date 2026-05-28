@@ -2,10 +2,25 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY =
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").trim().replace(/\/+$/, "");
+const SUPABASE_KEY = (
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY;
+  ""
+).trim();
+
+const supabaseUrlPresent = Boolean(import.meta.env.VITE_SUPABASE_URL);
+const anonKeyPresent = Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
+const publishableKeyPresent = Boolean(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error("❌ KRITIČNA GREŠKA: Supabase URL ili Anon Key nedostaju u .env.local!");
+  console.log("VITE_SUPABASE_URL found:", supabaseUrlPresent);
+  console.log("VITE_SUPABASE_ANON_KEY found:", anonKeyPresent);
+  console.log("VITE_SUPABASE_PUBLISHABLE_KEY found:", publishableKeyPresent);
+  console.log("Supabase URL raw:", import.meta.env.VITE_SUPABASE_URL);
+  throw new Error("Supabase credentials missing! Make sure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.");
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

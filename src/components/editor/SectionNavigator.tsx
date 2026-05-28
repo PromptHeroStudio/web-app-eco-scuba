@@ -37,8 +37,8 @@ export function SectionNavigator({
     };
 
     return (
-        <div className="w-[280px] h-full flex flex-col border-r border-border bg-bg-secondary sticky top-0">
-            <div className="p-6 border-b border-border bg-bg-tertiary/20">
+        <div style={{ perspective: 1000 }} className="w-[280px] h-full flex flex-col border-r border-[#D6E6F5] bg-[#EAF4FF]/60 backdrop-blur-[12px] shadow-[0_12px_32px_rgba(47,128,237,0.08)] sticky top-0">
+            <div className="p-6 border-b border-[#D6E6F5] bg-white/90">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-text-muted mb-4">Struktura projekta</h3>
                 <div className="space-y-2">
                     <div className="flex justify-between text-[11px] font-bold">
@@ -54,14 +54,19 @@ export function SectionNavigator({
                     <button
                         key={section.id}
                         onClick={() => onSectionClick(section.id)}
-                        className={`w-full flex items-center justify-between p-3 rounded-xl transition-all duration-200 group border ${activeSectionId === section.id
-                                ? "bg-brand/10 text-brand border-brand/20 shadow-lg shadow-brand/5"
-                                : "text-text-muted hover:bg-bg-tertiary hover:text-text-primary border-transparent"
+                        className={`w-full flex items-center justify-between p-3 rounded-[22px] transition-all duration-200 group border ${activeSectionId === section.id
+                                ? "bg-brand/10 text-brand border-brand/20 shadow-[0_12px_28px_rgba(47,128,237,0.12)]"
+                                : "text-text-muted hover:bg-[#F4F9FF] hover:text-foreground border-transparent"
                             }`}
                     >
                         <div className="flex items-center gap-3 min-w-0">
                             <FileText className={`h-4 w-4 shrink-0 ${activeSectionId === section.id ? "text-brand" : "text-text-dim group-hover:text-text-muted"}`} />
                             <span className="text-[13px] font-medium truncate leading-tight">{section.section_title_bs}</span>
+                            {section.status === 'revision_requested' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300">
+                                    <AlertTriangle className="h-3 w-3" /> Revizija
+                                </span>
+                            )}
                         </div>
                         {getStatusIcon(section.status)}
                     </button>

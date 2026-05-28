@@ -12,6 +12,7 @@ import {
     Loader2
 } from "lucide-react";
 import { useUIStore } from "@/store/uiStore";
+import type { Profile } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,7 +26,10 @@ export default function Settings() {
     const { setPageTitle } = useUIStore();
     const [loading, setLoading] = useState(false);
     const [fetching, setFetching] = useState(true);
-    const [profile, setProfile] = useState<any>(null);
+    const [profile, setProfile] = useState<Profile | null>(null);
+    const [passwordState, setPasswordState] = useState({ current: '', new: '', confirm: '' });
+    const [passwordLoading, setPasswordLoading] = useState(false);
+    const [authProvider, setAuthProvider] = useState<string | null>(null);
 
     useEffect(() => {
         setPageTitle("Postavke sistema");
@@ -37,6 +41,9 @@ export default function Settings() {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
+                const provider = (user as any)?.app_metadata?.provider ?? (user as any)?.identities?.[0]?.provider ?? null;
+                setAuthProvider(provider);
+
                 const { data, error } = await supabase
                     .from('profiles')
                     .select('*')
@@ -44,7 +51,13 @@ export default function Settings() {
                     .single();
 
                 if (error) throw error;
-                if (data) setProfile(data);
+                if (data) {
+                    const normalizedProfile = {
+                        ...data,
+                        notification_prefs: data.notification_prefs ?? { email: true, inapp: true, deadlines: true }
+                    };
+                    setProfile(normalizedProfile);
+                }
             }
         } catch (err) {
             console.error("Error fetching profile:", err);
@@ -60,19 +73,180 @@ export default function Settings() {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
+            if (!profile) throw new Error('Profil nije učitan.');
+
+            const notificationPrefs = profile.notification_prefs ?? { email: true, inapp: true, deadlines: true };
 
             const { error } = await supabase
                 .from('profiles')
                 .update({
                     full_name: profile.full_name,
                     organization: profile.organization,
-                } as any)
+                    notification_prefs: notificationPrefs,
+                })
                 .eq('id', user.id);
 
             if (error) throw error;
             toast.success("Profil uspješno ažuriran!");
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error("Profile save error:", err);
+            toast.error(message || "Greška pri spašavanju promjena.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error("Datoteka je prevelika. Maksimalno 5MB.");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('profile-avatars')
+                .upload(fileName, file, { upsert: true });
+
+            if (uploadError) throw uploadError;
+
+            const { data } = await supabase.storage
+                .from('profile-avatars')
+                .getPublicUrl(fileName);
+
+            const { error: updateError } = await supabase
+                .from('profiles')
+                .update({ avatar_url: data.publicUrl })
+                .eq('id', user.id);
+
+            if (updateError) throw updateError;
+
+            setProfile({ ...profile, avatar_url: data.publicUrl });
+            toast.success("Avatar uspješno učitan!");
         } catch (err) {
-            toast.error("Greška pri spašavanju promjena.");
+            console.error("Avatar upload error:", err);
+            toast.error("Greška pri učitavanju avatara.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePasswordChange = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        if (passwordState.new !== passwordState.confirm) {
+            toast.error("Lozinke se ne poklapaju.");
+            return;
+        }
+
+        if (passwordState.new.length < 12) {
+            toast.error("Nova lozinka mora imati najmanje 12 karaktera.");
+            return;
+        }
+
+        setPasswordLoading(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                throw new Error('Ne mogu dohvatiti korisnika. Molimo osvježite stranicu.');
+            }
+
+            const provider = (user as any)?.app_metadata?.provider ?? (user as any)?.identities?.[0]?.provider ?? null;
+            if (provider === 'google') {
+                toast.error("Prijavljeni ste putem Google računa. Lozinku možete promijeniti u postavkama Google profila.");
+                return;
+            }
+
+            if (!user.email) {
+                throw new Error('Ne mogu dohvatiti vašu email adresu. Molimo osvježite stranicu.');
+            }
+
+            const { error: reauthError } = await supabase.auth.signInWithPassword({
+                email: user.email,
+                password: passwordState.current,
+            });
+
+            if (reauthError) {
+                console.error('Re-authentication failed:', reauthError);
+                toast.error("Pogrešna trenutna lozinka.");
+                return;
+            }
+
+            const { error: updateError } = await supabase.auth.updateUser({
+                password: passwordState.new
+            });
+
+            if (updateError) {
+                console.error('Password update failed:', updateError);
+                throw updateError;
+            }
+
+            toast.success("Lozinka uspješno ažurirana!");
+            setPasswordState({ current: '', new: '', confirm: '' });
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error("Password change error:", err);
+            toast.error(message || "Greška pri promjeni lozinke.");
+        } finally {
+            setPasswordLoading(false);
+        }
+    };
+
+    const handleSaveNotificationPrefs = async (notificationPrefs?: { email: boolean; inapp: boolean; deadlines: boolean }) => {
+        setLoading(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+            const prefs = notificationPrefs ?? profile?.notification_prefs ?? { email: true, inapp: true, deadlines: true };
+
+            const { error } = await supabase
+                .from('profiles')
+                .update({ notification_prefs: prefs })
+                .eq('id', user.id);
+
+            if (error) throw error;
+            toast.success("Preferencije obavijestavanja ažurirane!");
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error("Notification prefs save error:", err);
+            toast.error(message || "Greška pri spašavanju preferencija.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDeleteAccount = async () => {
+        if (!confirm("Sigurni ste? Ova akcija je nepovratna i trajno ćete izgubiti pristup svim projektima.")) {
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            // Delete user data first
+            await supabase.from('projects').delete().eq('owner_id', user.id);
+            
+            // Delete user account
+            const response = await supabase.auth.admin.deleteUser(user.id);
+            if (response.error) throw response.error;
+
+            toast.success("Račun obrisан. Preusmjeravam na login...");
+            setTimeout(() => window.location.href = '/login', 2000);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            toast.error(message || "Greška pri brisanju računa.");
         } finally {
             setLoading(false);
         }
@@ -93,8 +267,8 @@ export default function Settings() {
             className="max-w-4xl mx-auto py-6"
         >
             <div className="mb-8">
-                <h1 className="text-3xl font-display font-bold text-text-primary">Postavke</h1>
-                <p className="text-text-dim text-sm mt-1">Upravljajte svojim računom, organizacijom i obavijestima.</p>
+                <h1 className="text-3xl font-display font-bold text-[#0B1F33]">Postavke</h1>
+                <p className="text-[#4B647A] text-sm mt-1">Upravljajte svojim računom, organizacijom i obavijestima.</p>
             </div>
 
             <Tabs defaultValue="profil" className="space-y-8">
@@ -113,11 +287,11 @@ export default function Settings() {
                     </TabsTrigger>
                 </TabsList>
 
-                <div className="bg-bg-secondary rounded-[2rem] border border-border p-8 lg:p-12 shadow-xl shadow-black/5 relative overflow-hidden">
+                <div className="relative overflow-hidden">
                     {/* Subtle Background Decoration */}
                     <div className="absolute top-0 right-0 w-64 h-64 bg-brand/5 blur-[100px] pointer-events-none rounded-full" />
 
-                    <TabsContent value="profil" className="mt-0 space-y-10 relative z-10">
+                    <TabsContent value="profil" className="mt-0 space-y-10 relative z-10 bg-white/90 border border-white/80 rounded-[24px] shadow-[0_8px_24px_rgba(47,128,237,0.08)] p-8">
                         <div className="flex flex-col md:flex-row gap-12 items-start">
                             {/* Avatar section */}
                             <div className="flex flex-col items-center gap-5">
@@ -131,13 +305,21 @@ export default function Settings() {
                                             </span>
                                         )}
                                     </div>
-                                    <button className="absolute bottom-1 right-1 h-10 w-10 rounded-full bg-brand text-white flex items-center justify-center border-4 border-bg-secondary shadow-lg hover:scale-110 transition-transform active:scale-95">
+                                    <label htmlFor="avatar-upload" className="absolute bottom-1 right-1 h-10 w-10 rounded-full bg-brand text-white flex items-center justify-center border-4 border-bg-secondary shadow-lg hover:scale-110 transition-transform active:scale-95 cursor-pointer">
                                         <Camera className="h-4 w-4" />
-                                    </button>
+                                    </label>
+                                    <input
+                                        id="avatar-upload"
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/gif"
+                                        onChange={handleAvatarUpload}
+                                        disabled={loading}
+                                        className="hidden"
+                                    />
                                 </div>
                                 <div className="text-center">
-                                    <p className="text-xs font-bold uppercase tracking-widest text-text-primary">Profilna slika</p>
-                                    <p className="text-[10px] text-text-dim uppercase tracking-tighter mt-1.5">PNG, JPG ili GIF do 5MB</p>
+                                    <p className="text-xs font-bold uppercase tracking-widest text-[#0B1F33]">Profilna slika</p>
+                                    <p className="text-[10px] text-[#4B647A] uppercase tracking-tighter mt-1.5">PNG, JPG ili GIF do 5MB</p>
                                 </div>
                             </div>
 
@@ -145,7 +327,7 @@ export default function Settings() {
                             <form onSubmit={handleSaveProfile} className="flex-1 space-y-8">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="space-y-2.5">
-                                        <Label htmlFor="fullname" className="text-xs font-bold uppercase tracking-widest text-text-muted px-1">Ime i prezime</Label>
+                                        <Label htmlFor="fullname" className="text-xs font-bold uppercase tracking-widest text-[#4B647A] px-1">Ime i prezime</Label>
                                         <Input
                                             id="fullname"
                                             value={profile?.full_name || ''}
@@ -155,7 +337,7 @@ export default function Settings() {
                                         />
                                     </div>
                                     <div className="space-y-2.5">
-                                        <Label htmlFor="email" className="text-xs font-bold uppercase tracking-widest text-text-muted px-1">Email adresa</Label>
+                                        <Label htmlFor="email" className="text-xs font-bold uppercase tracking-widest text-[#4B647A] px-1">Email adresa</Label>
                                         <Input
                                             id="email"
                                             value={profile?.email || ''}
@@ -165,7 +347,7 @@ export default function Settings() {
                                     </div>
                                 </div>
                                 <div className="space-y-2.5">
-                                    <Label htmlFor="org" className="text-xs font-bold uppercase tracking-widest text-text-muted px-1">Organizacija / Sekcija</Label>
+                                    <Label htmlFor="org" className="text-xs font-bold uppercase tracking-widest text-[#4B647A] px-1">Organizacija / Sekcija</Label>
                                     <Input
                                         id="org"
                                         value={profile?.organization || ''}
@@ -190,27 +372,60 @@ export default function Settings() {
                         </div>
                     </TabsContent>
 
-                    <TabsContent value="sigurnost" className="mt-0 space-y-10 relative z-10">
+                    <TabsContent value="sigurnost" className="mt-0 space-y-10 relative z-10 bg-white/90 border border-white/80 rounded-[24px] shadow-[0_8px_24px_rgba(47,128,237,0.08)] p-8">
                         <div className="max-w-md space-y-10">
                             <div className="space-y-6">
                                 <div>
-                                    <h3 className="text-lg font-bold text-text-primary">Promjena lozinke</h3>
-                                    <p className="text-xs text-text-dim mt-1">Osigurajte da vaša lozinka ima najmanje 12 karaktera.</p>
+                                    <h3 className="text-lg font-bold text-[#0B1F33]">Promjena lozinke</h3>
+                                    <p className="text-xs text-[#4B647A] mt-1">Osigurajte da vaša lozinka ima najmanje 12 karaktera.</p>
                                 </div>
-                                <div className="space-y-5">
+                            <div className="space-y-5">
+                                    {authProvider === 'google' ? (
+                                        <div className="rounded-2xl border border-[#D6E6F5] bg-white/80 p-4 text-sm text-[#0B1F33]">
+                                            Prijavljeni ste putem Google računa. Lozinku možete promijeniti u postavkama Google profila.
+                                        </div>
+                                    ) : null}
                                     <div className="space-y-2.5">
-                                        <Label htmlFor="current-pass" className="text-xs font-bold uppercase tracking-widest text-text-muted px-1">Trenutna lozinka</Label>
-                                        <Input id="current-pass" type="password" className="bg-bg-tertiary border-border h-12 rounded-xl" />
+                                        <Label htmlFor="current-pass" className="text-xs font-bold uppercase tracking-widest text-[#4B647A] px-1">Trenutna lozinka</Label>
+                                        <Input 
+                                            id="current-pass" 
+                                            type="password" 
+                                            className="bg-white/5 border border-[#D6E6F5] h-12 rounded-xl"
+                                            value={passwordState.current}
+                                            onChange={e => setPasswordState({ ...passwordState, current: e.target.value })}
+                                            disabled={passwordLoading || authProvider === 'google'}
+                                        />
                                     </div>
                                     <div className="space-y-2.5">
-                                        <Label htmlFor="new-pass" className="text-xs font-bold uppercase tracking-widest text-text-muted px-1">Nova lozinka</Label>
-                                        <Input id="new-pass" type="password" className="bg-bg-tertiary border-border h-12 rounded-xl" />
+                                        <Label htmlFor="new-pass" className="text-xs font-bold uppercase tracking-widest text-[#4B647A] px-1">Nova lozinka</Label>
+                                        <Input 
+                                            id="new-pass" 
+                                            type="password" 
+                                            className="bg-white/5 border border-[#D6E6F5] h-12 rounded-xl"
+                                            value={passwordState.new}
+                                            onChange={e => setPasswordState({ ...passwordState, new: e.target.value })}
+                                            disabled={passwordLoading || authProvider === 'google'}
+                                        />
                                     </div>
                                     <div className="space-y-2.5">
-                                        <Label htmlFor="confirm-pass" className="text-xs font-bold uppercase tracking-widest text-text-muted px-1">Potvrda nove lozinke</Label>
-                                        <Input id="confirm-pass" type="password" className="bg-bg-tertiary border-border h-12 rounded-xl" />
+                                        <Label htmlFor="confirm-pass" className="text-xs font-bold uppercase tracking-widest text-[#4B647A] px-1">Potvrda nove lozinke</Label>
+                                        <Input 
+                                            id="confirm-pass" 
+                                            type="password" 
+                                            className="bg-white/5 border border-[#D6E6F5] h-12 rounded-xl"
+                                            value={passwordState.confirm}
+                                            onChange={e => setPasswordState({ ...passwordState, confirm: e.target.value })}
+                                            disabled={passwordLoading || authProvider === 'google'}
+                                        />
                                     </div>
-                                    <Button className="w-full h-12 font-bold rounded-xl mt-2">Ažuriraj lozinku</Button>
+                                    <Button 
+                                        onClick={handlePasswordChange}
+                                        disabled={passwordLoading || !passwordState.new || authProvider === 'google'}
+                                        className="w-full h-12 font-bold rounded-xl mt-2 gap-2 bg-[#2F80ED] text-white hover:scale-105 transition-transform"
+                                    >
+                                        {passwordLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                                        Ažuriraj lozinku
+                                    </Button>
                                 </div>
                             </div>
 
@@ -223,7 +438,13 @@ export default function Settings() {
                                     <p className="text-xs text-danger/80 leading-relaxed font-medium">
                                         Brisanjem računa trajno gubite pristup svim projektima i asembliranim RIP podacima. Ova akcija je nepovratna.
                                     </p>
-                                    <Button variant="outline" className="w-full h-11 border-danger/30 text-danger hover:bg-danger/10 hover:text-danger font-bold rounded-xl">
+                                    <Button 
+                                        onClick={handleDeleteAccount}
+                                        disabled={loading}
+                                        variant="outline" 
+                                        className="w-full h-11 border-danger/30 text-danger hover:bg-danger/10 hover:text-danger font-bold rounded-xl gap-2"
+                                    >
+                                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                                         Trajno obriši moj račun
                                     </Button>
                                 </div>
@@ -231,48 +452,64 @@ export default function Settings() {
                         </div>
                     </TabsContent>
 
-                    <TabsContent value="obavijesti" className="mt-0 space-y-8 relative z-10">
+                    <TabsContent value="obavijesti" className="mt-0 space-y-8 relative z-10 bg-white/90 border border-white/80 rounded-[24px] shadow-[0_8px_24px_rgba(47,128,237,0.08)] p-8">
                         <div className="space-y-6">
                             <div className="flex items-center justify-between p-6 bg-bg-tertiary/50 rounded-2xl border border-border group hover:border-brand/20 transition-colors">
                                 <div className="space-y-1">
-                                    <p className="text-sm font-bold text-text-primary">Email obavijesti</p>
-                                    <p className="text-[11px] text-text-dim max-w-xs">Primajte asemblirane izvještaje o progresu sekcija na vaš email.</p>
+                                    <p className="text-sm font-bold text-[#0B1F33]">Email obavijesti</p>
+                                    <p className="text-[11px] text-[#4B647A] max-w-xs">Primajte asemblirane izvještaje o progresu sekcija na vaš email.</p>
                                 </div>
                                 <Switch
                                     checked={profile?.notification_prefs?.email || false}
-                                    onCheckedChange={checked => setProfile({ ...profile, notification_prefs: { ...profile.notification_prefs, email: checked } })}
-                                    className="data-[state=checked]:bg-brand"
+                                    onCheckedChange={async (checked) => {
+                                        const updated = { ...profile, notification_prefs: { ...profile?.notification_prefs, email: checked } };
+                                        setProfile(updated);
+                                        await handleSaveNotificationPrefs(updated.notification_prefs);
+                                    }}
+                                    className="data-[state=checked]:bg-[#00C2FF]"
                                 />
                             </div>
                             <div className="flex items-center justify-between p-6 bg-bg-tertiary/50 rounded-2xl border border-border group hover:border-brand/20 transition-colors">
                                 <div className="space-y-1">
-                                    <p className="text-sm font-bold text-text-primary">In-app notifikacije</p>
-                                    <p className="text-[11px] text-text-dim max-w-xs">Obavijesti o odobrenjima i komentarima saradnika unutar platforme.</p>
+                                    <p className="text-sm font-bold text-[#0B1F33]">In-app notifikacije</p>
+                                    <p className="text-[11px] text-[#4B647A] max-w-xs">Obavijesti o odobrenjima i komentarima saradnika unutar platforme.</p>
                                 </div>
                                 <Switch
                                     checked={profile?.notification_prefs?.inapp || false}
-                                    onCheckedChange={checked => setProfile({ ...profile, notification_prefs: { ...profile.notification_prefs, inapp: checked } })}
-                                    className="data-[state=checked]:bg-brand"
+                                    onCheckedChange={async (checked) => {
+                                        const updated = { ...profile, notification_prefs: { ...profile?.notification_prefs, inapp: checked } };
+                                        setProfile(updated);
+                                        await handleSaveNotificationPrefs(updated.notification_prefs);
+                                    }}
+                                    className="data-[state=checked]:bg-[#00C2FF]"
                                 />
                             </div>
                             <div className="flex items-center justify-between p-6 bg-bg-tertiary/50 rounded-2xl border border-border group hover:border-brand/20 transition-colors">
                                 <div className="space-y-1">
-                                    <p className="text-sm font-bold text-text-primary">Upozorenja o rokovima</p>
-                                    <p className="text-[11px] text-text-dim max-w-xs">Primajte signale kada se približava rok za predaju projekta.</p>
+                                    <p className="text-sm font-bold text-[#0B1F33]">Upozorenja o rokovima</p>
+                                    <p className="text-[11px] text-[#4B647A] max-w-xs">Primajte signale kada se približava rok za predaju projekta.</p>
                                 </div>
-                                <Switch defaultChecked className="data-[state=checked]:bg-brand" />
+                                <Switch 
+                                    checked={profile?.notification_prefs?.deadlines || false}
+                                    onCheckedChange={async (checked) => {
+                                        const updated = { ...profile, notification_prefs: { ...profile?.notification_prefs, deadlines: checked } };
+                                        setProfile(updated);
+                                        await handleSaveNotificationPrefs(updated.notification_prefs);
+                                    }}
+                                    className="data-[state=checked]:bg-[#00C2FF]" 
+                                />
                             </div>
                         </div>
                     </TabsContent>
 
-                    <TabsContent value="organizacija" className="mt-0 space-y-8 relative z-10">
+                    <TabsContent value="organizacija" className="mt-0 space-y-8 relative z-10 bg-white/90 border border-white/80 rounded-[24px] shadow-[0_8px_24px_rgba(47,128,237,0.08)] p-8">
                         <div className="p-10 bg-brand/[0.03] rounded-[2.5rem] border border-brand/10 text-center relative overflow-hidden">
                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-brand to-transparent opacity-20" />
                             <div className="h-24 w-24 rounded-full bg-brand/5 border border-brand/10 flex items-center justify-center mx-auto mb-8 shadow-inner shadow-brand/5">
                                 <Building className="h-12 w-12 text-brand" />
                             </div>
-                            <h3 className="text-2xl font-display font-bold text-text-primary mb-3">Institucionalna licenca</h3>
-                            <p className="text-sm text-text-dim max-w-sm mx-auto mb-10 leading-relaxed">
+                            <h3 className="text-2xl font-display font-bold text-[#0B1F33] mb-3">Institucionalna licenca</h3>
+                            <p className="text-sm text-[#4B647A] max-w-sm mx-auto mb-10 leading-relaxed">
                                 Vaš račun je dio organizacije <span className="text-brand font-bold">{profile?.organization || 'ECO SCUBA'}</span>.
                                 Svi asemblirani RIP podaci se dijele unutar vaše sekcije.
                             </p>

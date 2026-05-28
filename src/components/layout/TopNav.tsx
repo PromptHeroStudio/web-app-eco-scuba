@@ -27,8 +27,8 @@ export default function TopNav({ title }: TopNavProps) {
   return (
     <>
       <Drawer open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <DrawerContent className="bg-bg-secondary text-text-primary p-0">
-          <DrawerHeader className="flex items-center justify-between border-b border-border px-4 py-4">
+        <DrawerContent className="bg-background text-foreground p-0">
+          <DrawerHeader className="flex items-center justify-between border-b border-sidebar-border px-4 py-4">
             <DrawerTitle className="text-lg font-bold">ECO SCUBA</DrawerTitle>
             <DrawerClose asChild>
               <button className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted/20 hover:text-foreground transition-all">
@@ -55,11 +55,11 @@ export default function TopNav({ title }: TopNavProps) {
         </DrawerContent>
       </Drawer>
 
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/80 backdrop-blur-xl px-4 md:px-6">
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#D6E6F5] bg-white/90 backdrop-blur-xl px-4 md:px-6 shadow-[0_16px_48px_rgba(47,128,237,0.1)]">
         <div className="flex items-center gap-3">
           <button
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-muted/20 text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all md:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[#D6E6F5] bg-white/90 text-muted-foreground hover:text-foreground hover:bg-white transition-all md:hidden"
             onClick={() => setMobileNavOpen(true)}
             aria-label="Otvori navigaciju"
           >
@@ -74,7 +74,7 @@ export default function TopNav({ title }: TopNavProps) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Pretraži..."
-              className="w-48 xl:w-64 pl-9 bg-muted/20 border-border focus:border-primary/50 transition-all rounded-xl h-10"
+              className="w-48 xl:w-64 pl-9 bg-white/90 border border-[#D6E6F5] focus:border-primary/50 transition-all rounded-2xl h-10"
             />
           </div>
 
@@ -82,7 +82,7 @@ export default function TopNav({ title }: TopNavProps) {
 
           <Button
             size="sm"
-            className="gap-2 rounded-xl h-10 px-4 shadow-lg shadow-primary/20"
+            className="gap-2 rounded-2xl h-10 px-4 shadow-[0_8px_24px_rgba(47,128,237,0.12)]"
             onClick={() => setWizardOpen(true)}
           >
             <Plus className="h-4 w-4" />
@@ -91,7 +91,7 @@ export default function TopNav({ title }: TopNavProps) {
         </div>
       </header>
 
-      <NewProjectWizard open={wizardOpen} onOpenChange={setWizardOpen} />
+      {wizardOpen && <NewProjectWizard onClose={() => setWizardOpen(false)} />}
     </>
   );
 }

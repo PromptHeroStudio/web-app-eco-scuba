@@ -41,11 +41,11 @@ export default function AppSidebar() {
     <motion.aside
       animate={{ width: isCollapsed ? 64 : 256 }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
-      className="hidden md:flex fixed left-0 top-0 bottom-0 z-40 flex-col border-r border-border bg-bg-secondary"
+      className="hidden md:flex fixed left-0 top-0 bottom-0 z-50 flex-col border-r border-[#D6E6F5] bg-[#EAF4FF]/60 backdrop-blur-[8px] shadow-[8px_0_24px_-8px_rgba(47,128,237,0.06)]"
     >
       {/* Logo */}
-      <div className="flex h-16 items-center gap-3 px-4 border-b border-border">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+      <div className="flex h-16 items-center gap-3 px-4 border-b border-sidebar-border bg-white/80 backdrop-blur-xl">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 shadow-[0_8px_24px_rgba(47,128,237,0.08)]">
           <Waves className="h-5 w-5 text-primary" />
         </div>
         <AnimatePresence>
@@ -72,9 +72,9 @@ export default function AppSidebar() {
             <Link
               key={item.path}
               to={item.path}
-              className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 relative ${isActive
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              className={`group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all duration-200 relative ${isActive
+                ? "bg-primary/10 text-primary shadow-[0_8px_24px_rgba(47,128,237,0.08)]"
+                : "text-sidebar-foreground hover:text-foreground hover:bg-[#EFF6FF]"
                 }`}
             >
               {isActive && (
@@ -103,14 +103,14 @@ export default function AppSidebar() {
       </nav>
 
       {/* Responsibilities Section - Mandatory */}
-      <div className="px-4 py-4 space-y-3 border-t border-border">
+      <div className="px-4 py-4 space-y-3 border-t border-sidebar-border">
         {!isCollapsed && (
           <h4 className="text-[10px] font-bold text-text-dim uppercase tracking-widest pl-1">
             Odgovornosti
           </h4>
         )}
-        <div className={`rounded-xl bg-orange-500/5 border border-orange-500/20 p-3 overflow-hidden transition-all duration-300 ${isCollapsed ? 'opacity-0 h-0 pointer-events-none' : 'h-[150px] opacity-100'}`}>
-          <p className="text-[11px] text-orange-500/80 leading-relaxed overflow-y-auto h-full scrollbar-none select-none">
+        <div className={`rounded-3xl bg-white border border-[#D6E6F5] p-4 overflow-hidden transition-all duration-300 ${isCollapsed ? 'opacity-0 h-0 pointer-events-none' : 'h-[150px] opacity-100'}`}>
+          <p className="text-[11px] text-text-muted leading-relaxed overflow-y-auto h-full scrollbar-none select-none">
             <strong>OBAVJEŠTENJE:</strong> ECO SCUBA AI (APA sistem) generiše sadržaj na osnovu vještačke inteligencije.
             Sistem može kreirati netačne podatke. Korisnik (autor projekta) preuzima punu odgovornost za tačnost, istinitost i provjeru svih generisanih informacija i statistika u finalnom dokumentu.
             KVS S.C.U.B.A. nije odgovoran za eventualne propuste proizašle iz automatskog generisanja.
@@ -119,10 +119,10 @@ export default function AppSidebar() {
       </div>
 
       {/* Footer / Logout */}
-      <div className="border-t border-border p-2 space-y-1">
+      <div className="border-t border-sidebar-border p-2 space-y-1">
         <button
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:text-danger hover:bg-danger/10 transition-colors"
+          className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-sidebar-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
         >
           <LogOut className="h-5 w-5 shrink-0" />
           {!isCollapsed && <span>Odjava</span>}

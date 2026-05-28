@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import { Bell, Check, Info, AlertTriangle, CheckCircle } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { Bell, CheckCircle, Info, AlertTriangle } from "lucide-react";
 import {
     Popover,
     PopoverContent,
@@ -7,76 +8,103 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { Notification } from "@/types";
+import type { Notification } from "@/types";
 
 export default function NotificationBell() {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [isPingActive, setIsPingActive] = useState(false);
 
-    useEffect(() => {
-        fetchNotifications();
-        const cleanup = subscribeToNotifications();
-        return cleanup;
+    const activatePing = useCallback(() => {
+        setIsPingActive(true);
+        window.setTimeout(() => setIsPingActive(false), 1200);
     }, []);
 
-    const fetchNotifications = async () => {
+    const fetchNotifications = useCallback(async () => {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            // Use any to bypass strict table type if missing in Database schema
-            const { data, error } = await (supabase as any)
-                .from('notifications')
+            const { data, error } = await supabase
+                .from<Notification>('notifications')
                 .select('*')
                 .eq('user_id', user.id)
                 .order('created_at', { ascending: false })
                 .limit(10);
 
             if (error) {
-                // Silently handle 404/400 if table doesn't exist yet or other schema mismatch
-                console.warn("Notifications fetch stalled:", error.message);
+                console.warn('Notifications fetch stalled:', error.message);
                 return;
             }
 
             if (data) {
-                setNotifications(data as Notification[]);
-                setUnreadCount((data as Notification[]).filter(n => !n.is_read).length);
+                setNotifications(data);
+                setUnreadCount(data.filter((notification) => !notification.is_read).length);
             }
         } catch (err) {
-            console.error("Critical notifications error:", err);
+            console.error('Critical notifications error:', err);
         }
-    };
+    }, []);
 
-    const subscribeToNotifications = () => {
+    const subscribeToNotifications = useCallback(async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return () => undefined;
+
         const channel = supabase
-            .channel('realtime-notifications')
+            .channel(`notifications-user-${user.id}`)
             .on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
-                table: 'notifications'
+                table: 'notifications',
+                filter: `user_id=eq.${user.id}`,
             }, (payload) => {
-                setNotifications(prev => [payload.new as Notification, ...prev].slice(0, 10));
-                setUnreadCount(prev => prev + 1);
+                const newNotification = payload.new as Notification;
+                setNotifications((prev) => [newNotification, ...prev].slice(0, 10));
+                setUnreadCount((prev) => prev + 1);
+                activatePing();
             })
             .subscribe();
 
         return () => {
             supabase.removeChannel(channel);
         };
-    };
+    }, [activatePing]);
 
-    const markAllAsRead = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+    useEffect(() => {
+        void fetchNotifications();
+        let cleanup = () => undefined;
 
-        await (supabase as any)
-            .from('notifications')
-            .update({ is_read: true })
-            .eq('user_id', user.id);
+        void subscribeToNotifications().then((disposer) => {
+            if (typeof disposer === 'function') cleanup = disposer;
+        }).catch((err) => {
+            console.error('Notification subscription failed:', err);
+        });
 
-        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-        setUnreadCount(0);
-    };
+        return cleanup;
+    }, [fetchNotifications, subscribeToNotifications]);
+
+    const markAllAsRead = useCallback(async () => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { error } = await supabase
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', user.id)
+                .not('is_read', 'is', true);
+
+            if (error) {
+                console.error('Failed to mark notifications as read:', error.message);
+                return;
+            }
+
+            setNotifications((prev) => prev.map((notification) => ({ ...notification, is_read: true })));
+            setUnreadCount(0);
+        } catch (err) {
+            console.error('Mark all as read failed:', err);
+        }
+    }, []);
 
     return (
         <Popover>
@@ -85,9 +113,17 @@ export default function NotificationBell() {
                     className="relative flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all duration-300 border border-transparent hover:border-white/10"
                     aria-label="Notifikacije"
                 >
-                    <Bell className="h-5 w-5" />
+                    {isPingActive && (
+                        <motion.span
+                            initial={{ scale: 0.8, opacity: 0.8 }}
+                            animate={{ scale: [0.8, 1.4, 1], opacity: [0.8, 0.2, 0] }}
+                            transition={{ duration: 1.2, ease: 'easeOut' }}
+                            className="absolute inset-0 rounded-full bg-primary/20"
+                        />
+                    )}
+                    <Bell className="h-5 w-5 relative z-10" />
                     {unreadCount > 0 && (
-                        <span className="absolute top-2 right-2 h-4 w-4 rounded-full bg-primary text-[10px] font-bold text-white flex items-center justify-center animate-pulse shadow-lg shadow-primary/50">
+                        <span className="absolute top-2 right-2 h-4 w-4 rounded-full bg-primary text-[10px] font-bold text-white flex items-center justify-center shadow-lg shadow-primary/50">
                             {unreadCount}
                         </span>
                     )}

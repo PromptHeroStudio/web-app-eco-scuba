@@ -1,13 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Mail, Lock } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import ParticleBackground from "@/components/auth/ParticleBackground";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Login() {
@@ -15,18 +13,21 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setIsLoading(true);
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       navigate("/dashboard");
-    } catch (error: any) {
-      let description = error.message || "Pokušajte ponovo kasnije.";
+    } catch (caughtError: unknown) {
+      const errorMessage = caughtError instanceof Error ? caughtError.message : String(caughtError || "Pokušajte ponovo kasnije.");
+      let description = errorMessage;
       if (description === "Invalid login credentials") {
         description = "Pogrešan email ili lozinka.";
       } else if (/email.*not.*confirmed|user.*not.*confirmed|not.*confirmed/i.test(description)) {
@@ -34,142 +35,140 @@ export default function Login() {
       } else if (/network|fetch|connection/i.test(description)) {
         description = "Mrežna greška. Provjerite internet konekciju i pokušajte ponovo.";
       }
-      toast({
-        title: "Greška pri prijavi",
-        description,
-        variant: "destructive",
-      });
+      toast({ title: "Greška pri prijavi", description, variant: "destructive" });
     } finally {
       setLoading(false);
+      setIsLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
-    const { error } = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: `${window.location.origin}/auth/callback`,
-    });
-    if (error) {
-      toast({ title: "Greška", description: error.message, variant: "destructive" });
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) {
+        toast({ title: 'Greška pri Google prijavi', description: error?.message || 'Neuspjela OAuth inicijalizacija.', variant: 'destructive' });
+        return;
+      }
+
+      if (data?.url) {
+        // iframe / popup breaker
+        if (window.self !== window.top) {
+          window.top.location.href = data.url;
+        } else {
+          window.location.assign(data.url);
+        }
+
+        // fallback
+        setTimeout(() => {
+          try { window.open(data.url, '_top'); } catch {};
+        }, 400);
+      }
+    } catch (_err) {
+      toast({ title: 'Greška pri Google prijavi', description: 'Google prijava trenutno nije dostupna.', variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center">
-      <ParticleBackground />
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-        className="relative z-10 w-full max-w-md mx-4"
-      >
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
-          <motion.div
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: "spring" }}
-            className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white/5 glow-border mb-4 overflow-hidden border border-white/10 p-2"
-          >
-            <img
-              src="https://i.postimg.cc/Z5PkMvVq/KVS-SCUBA-LOGO.png"
-              alt="ECO SCUBA Logo"
-              className="w-full h-full object-contain"
-            />
-          </motion.div>
-          <h1 className="font-display text-4xl font-bold text-text-primary tracking-tight">ECO SCUBA</h1>
-          <p className="text-sm text-text-muted mt-2 font-medium">AI platforma za projektne prijedloge</p>
-        </div>
-
-        {/* Form card */}
-        <div className="glass rounded-2xl border border-border p-8 shadow-lg">
-          <h2 className="font-display text-xl font-semibold text-foreground mb-6 text-center">
-            Prijavite se
-          </h2>
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm text-muted-foreground">Email adresa</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="vas@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 bg-muted/20 border-border focus:border-primary/50"
-                  required
-                />
+    <div className="min-h-screen h-screen w-full bg-fixed bg-cover bg-center bg-[url('/splash-a.png')] flex items-center justify-end">
+      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="w-full max-w-6xl mx-4 px-6">
+        <div className="flex w-full justify-end pr-10 lg:pr-32">
+          <div className="w-full max-w-md">
+            <div className="rounded-[40px] border border-white/10 bg-white/5 backdrop-blur-md shadow-blue-500/5 p-8 lg:p-10 text-white">
+              <div className="mb-6">
+                <h1 className="text-3xl font-bold tracking-tight">Prijavite se</h1>
+                <p className="mt-2 text-sm text-white/80">Dobrodošli nazad. Nastavite svoju ekološku misiju.</p>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm text-muted-foreground">Lozinka</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-muted/20 border-border focus:border-primary/50"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label={showPassword ? "Sakrij lozinku" : "Prikaži lozinku"}
+              <form onSubmit={handleLogin} className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-sm text-white">Email adresa</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/70" />
+                    <Input
+                      id="email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="vas@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full rounded-[20px] border border-white/20 bg-white/5 px-10 py-3 text-white placeholder:text-white/40 focus:border-transparent focus:ring-2 focus:ring-cyan-400 outline-none"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-sm text-white">Lozinka</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/70" />
+                    <Input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full rounded-[20px] border border-white/20 bg-white/5 px-10 py-3 pr-12 text-white placeholder:text-white/40 focus:border-transparent focus:ring-2 focus:ring-cyan-400 outline-none"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan-100/80 hover:text-white"
+                      aria-label={showPassword ? 'Sakrij lozinku' : 'Prikaži lozinku'}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Link to="/forgot-password" className="text-xs text-white hover:underline transition-colors cursor-pointer">Zaboravili ste lozinku?</Link>
+                </div>
+
+                <Button
+                  type="submit"
+                  className={`w-full rounded-[20px] bg-white/10 border border-white/20 text-white font-semibold uppercase tracking-wider py-3 hover:bg-white/20 transition-all ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  disabled={loading || isLoading}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+                  {isLoading ? <div className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Prijava...</div> : 'Prijavite se'}
+                </Button>
+              </form>
+
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/20" /></div>
+                <div className="relative flex justify-center text-xs"><span className="bg-white/5 px-3 text-white/50">ili</span></div>
               </div>
-            </div>
 
-            <div className="flex justify-end">
-              <Link to="/forgot-password" university-link="true" className="text-xs text-primary hover:text-accent transition-colors">
-                Zaboravili ste lozinku?
-              </Link>
-            </div>
+              <Button
+                variant="ghost"
+                className={`w-full gap-3 rounded-[20px] border border-white/20 bg-white/10 px-4 py-3 text-sm text-white hover:bg-white/20 transition-all ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                onClick={handleGoogleLogin}
+                disabled={isLoading}
+              >
+                <img
+                  src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+                  alt="Google"
+                  className="h-5 w-5 mr-3"
+                />
+                <span className="font-medium text-white">Prijava putem Google računa</span>
+              </Button>
 
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Prijava..." : "Prijavite se"}
-            </Button>
-          </form>
-
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-card px-3 text-muted-foreground">ili</span>
+              <p className="mt-6 text-center text-sm text-white/80">
+                Nemate račun? <Link to="/register" className="text-white hover:underline transition-colors font-medium cursor-pointer">Registrujte se</Link>
+              </p>
             </div>
           </div>
-
-          <Button
-            variant="outline"
-            className="w-full gap-2 border-border hover:bg-muted/30"
-            onClick={handleGoogleLogin}
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-            </svg>
-            Prijava putem Google računa
-          </Button>
-
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Nemate račun?{" "}
-            <Link to="/register" className="text-primary hover:text-accent transition-colors font-medium">
-              Registrujte se
-            </Link>
-          </p>
         </div>
       </motion.div>
     </div>

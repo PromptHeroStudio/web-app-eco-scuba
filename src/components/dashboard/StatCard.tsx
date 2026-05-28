@@ -15,25 +15,25 @@ const variantConfig: Record<string, { border: string; iconBg: string; iconColor:
     border: "border-brand/20 hover:border-brand/40",
     iconBg: "bg-brand/10",
     iconColor: "text-brand",
-    shadow: "shadow-brand/5",
+    shadow: "shadow-[0_8px_24px_rgba(47,128,237,0.08)]",
   },
   warning: {
     border: "border-warning/20 hover:border-warning/40",
     iconBg: "bg-warning/10",
     iconColor: "text-warning",
-    shadow: "shadow-warning/5",
+    shadow: "shadow-[0_8px_24px_rgba(47,128,237,0.08)]",
   },
   success: {
     border: "border-success/20 hover:border-success/40",
     iconBg: "bg-success/10",
     iconColor: "text-success",
-    shadow: "shadow-success/5",
+    shadow: "shadow-[0_8px_24px_rgba(47,128,237,0.08)]",
   },
   default: {
-    border: "border-border hover:border-brand/20",
-    iconBg: "bg-bg-tertiary",
+    border: "border-[#D6E6F5] hover:border-brand/20",
+    iconBg: "bg-[#F4F9FF]",
     iconColor: "text-text-muted",
-    shadow: "shadow-black/5",
+    shadow: "shadow-[0_8px_24px_rgba(47,128,237,0.08)]",
   },
 };
 
@@ -44,7 +44,7 @@ export default function StatCard({ icon: Icon, label, value, trend, variant = "d
     <motion.div
       whileHover={{ y: -4 }}
       className={cn(
-        "rounded-2xl border bg-bg-secondary p-6 transition-all duration-300 shadow-sm",
+        "rounded-[24px] border bg-white p-6 transition-all duration-300 shadow-[0_8px_24px_rgba(47,128,237,0.08)]",
         config.border,
         config.shadow
       )}

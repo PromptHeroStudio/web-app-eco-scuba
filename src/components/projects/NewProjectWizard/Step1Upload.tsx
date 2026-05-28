@@ -1,35 +1,86 @@
 // src/components/projects/NewProjectWizard/Step1Upload.tsx
 import { useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useDropzone } from "react-dropzone";
 import { Upload, FileText, X, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import * as pdfjsLib from 'pdfjs-dist';
+import { useProjectStore } from "@/store/projectStore";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/build/pdf.worker.min.mjs',
-    import.meta.url
-).toString();
+const loadPdfJs = async (): Promise<typeof import('pdfjs-dist')> => {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+        'pdfjs-dist/build/pdf.worker.min.mjs',
+        import.meta.url
+    ).toString();
+    return pdfjsLib;
+};
+
+interface FormTemplateField {
+    field_name: string;
+    field_type: string;
+    required: boolean;
+    label?: string;
+    section?: string;
+    page?: number;
+    options?: string[];
+}
+
+interface FormTemplateAnalysis {
+    fields: FormTemplateField[];
+    field_to_section_map?: Record<string, string>;
+    field_count: number;
+    page_count?: number;
+    detected_language?: string;
+    form_type?: string;
+    has_logo?: boolean;
+    layout?: string;
+    raw_summary?: string;
+}
 
 interface Props {
-    onNext: (data: any) => void;
+    onNext: (data: Record<string, unknown>) => void;
     onBack: () => void;
 }
 
 export default function Step1Upload({ onNext, onBack }: Props) {
     const navigate = useNavigate();
     const [file, setFile] = useState<File | null>(null);
+    const [pdfBase64, setPdfBase64] = useState<string | null>(null);
     const [analyzing, setAnalyzing] = useState(false);
     const [progress, setProgress] = useState(0);
+    const [externalDragActive, setExternalDragActive] = useState(false);
 
     const onDrop = useCallback((acceptedFiles: File[]) => {
         if (acceptedFiles.length > 0) {
             setFile(acceptedFiles[0]);
         }
     }, []);
+
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setExternalDragActive(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setExternalDragActive(false);
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setExternalDragActive(false);
+
+        const droppedFiles = Array.from(e.dataTransfer.files || []);
+        if (droppedFiles.length > 0) {
+            onDrop(droppedFiles);
+        }
+    };
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
@@ -39,6 +90,7 @@ export default function Step1Upload({ onNext, onBack }: Props) {
 
     const extractTextFromPDF = async (file: File): Promise<string> => {
         try {
+            const pdfjsLib = await loadPdfJs();
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             let text = '';
@@ -46,32 +98,34 @@ export default function Step1Upload({ onNext, onBack }: Props) {
             for (let i = 1; i <= maxPages; i++) {
                 const page = await pdf.getPage(i);
                 const content = await page.getTextContent();
-                text += content.items.map((item: any) => item.str).join(' ') + '\n';
+                text += content.items.map((item: { str: string }) => item.str).join(' ') + '\n';
             }
             console.log(`[PDF.js] Ekstrahovan tekst: ${text.length} znakova, ${pdf.numPages} stranica`);
             return text.substring(0, 8000);
-        } catch (err: any) {
-            console.warn('[PDF.js] Ekstrakcija nije uspjela:', err.message);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn('[PDF.js] Ekstrakcija nije uspjela:', message);
             return '';
         }
     };
+
+    const { currentProject, setCurrentProject } = useProjectStore();
+    const { id: projectId } = useParams();
 
     const handleProcess = async () => {
         if (!file) return;
 
         try {
-            // Early Session Guard
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) {
-                toast.error("Sesija istekla ili korisnik nije prijavljen.");
-                navigate("/login");
+                toast.error('Sesija istekla ili korisnik nije prijavljen.');
+                navigate('/login');
                 return;
             }
 
             setAnalyzing(true);
             setProgress(10);
 
-            // Čitaj PDF kao base64 I ekstrahuj tekst paralelno
             const [base64, extractedText] = await Promise.all([
                 new Promise<string>((resolve, reject) => {
                     const reader = new FileReader();
@@ -79,54 +133,94 @@ export default function Step1Upload({ onNext, onBack }: Props) {
                     reader.onerror = reject;
                     reader.readAsDataURL(file);
                 }),
-                extractTextFromPDF(file)
+                extractTextFromPDF(file),
             ]);
 
             setProgress(40);
             setProgress(60);
 
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 sekundi limit
+            const timeoutId = window.setTimeout(() => controller.abort(), 30000);
 
-            const { data, error: funcError } = await supabase.functions.invoke('process-form-upload', {
-                body: { 
-                    pdf_base64: base64, 
+            const result = await supabase.functions.invoke('process-form-upload', {
+                body: {
+                    pdf_base64: base64,
                     text_content: extractedText,
-                    source: 'application_form' 
+                    source: 'application_form',
                 },
                 headers: {
-                    Authorization: `Bearer ${session.access_token}`
+                    Authorization: `Bearer ${session.access_token}`,
                 },
-                signal: controller.signal
+                signal: controller.signal,
             });
-            clearTimeout(timeoutId);
+            window.clearTimeout(timeoutId);
 
-            if (funcError) {
-                console.error("Edge Function Error:", funcError);
+            if (result.error) {
+                console.error('Edge Function Error:', result.error);
                 setAnalyzing(false);
                 setProgress(0);
 
-                if (funcError.status === 401) {
-                    toast.error("Sesija nije prepoznata. Molimo osvježite stranicu i prijavite se ponovo.");
+                const errorPayload = result.error as { status?: number; message?: string };
+                if (errorPayload.status === 401) {
+                    toast.error('Sesija nije prepoznata. Molimo osvježite stranicu i prijavite se ponovo.');
                 } else {
-                    toast.error("Analiza obrasca nije uspjela. Možete nastaviti bez obrasca.");
+                    toast.error('Analiza obrasca nije uspjela. Možete nastaviti bez obrasca.');
                 }
                 return;
             }
 
-            toast.success("Obrazac uspješno analiziran!");
+            const extractedData = result.data as FormTemplateAnalysis;
+            const validAnalysis: FormTemplateAnalysis = {
+                fields: Array.isArray(extractedData?.fields) ? extractedData.fields : [],
+                field_to_section_map: typeof extractedData?.field_to_section_map === 'object' && extractedData?.field_to_section_map !== null ? extractedData.field_to_section_map as Record<string, string> : undefined,
+                field_count: typeof extractedData?.field_count === 'number' ? extractedData.field_count : (Array.isArray(extractedData?.fields) ? extractedData.fields.length : 0),
+                page_count: typeof extractedData?.page_count === 'number' ? extractedData.page_count : undefined,
+                detected_language: typeof extractedData?.detected_language === 'string' ? extractedData.detected_language : undefined,
+                form_type: typeof extractedData?.form_type === 'string' ? extractedData.form_type : undefined,
+                has_logo: typeof extractedData?.has_logo === 'boolean' ? extractedData.has_logo : undefined,
+                layout: typeof extractedData?.layout === 'string' ? extractedData.layout : undefined,
+                raw_summary: typeof extractedData?.raw_summary === 'string' ? extractedData.raw_summary : undefined,
+            };
+
+            if (projectId || currentProject?.id) {
+                const targetProjectId = projectId ?? currentProject?.id;
+                const isValidId = typeof targetProjectId === 'string' && /^[0-9a-fA-F-]{36}$/.test(targetProjectId);
+                if (!isValidId) {
+                    console.warn('Invalid project id, skipping remote update:', targetProjectId);
+                    if (currentProject) setCurrentProject({ ...currentProject, form_template_analysis: validAnalysis });
+                } else {
+                    const { error: updateError, data: updatedProject } = await supabase
+                        .from('projects')
+                        .update({ form_template_analysis: validAnalysis })
+                        .eq('id', targetProjectId)
+                        .select()
+                        .single();
+
+                    if (updateError) {
+                        console.error('Project update failed:', updateError);
+                        toast.error('Nije uspjelo spremanje analize obrasca. Podaci su ipak pripremljeni lokalno.');
+                    } else if (updatedProject && currentProject?.id === targetProjectId) {
+                        setCurrentProject({ ...currentProject, form_template_analysis: validAnalysis });
+                    }
+                }
+            }
+
+            toast.success('Obrazac uspješno analiziran!');
             setProgress(100);
 
+            setPdfBase64(base64);
             setTimeout(() => {
                 onNext({
                     hasTemplate: true,
                     fileName: file.name,
-                    extractedData: data
+                    extractedData: validAnalysis,
+                    form_template_base64: base64,
                 });
             }, 500);
 
-        } catch (err: any) {
-            toast.error(err.message || "Neuspješna analiza dokumenta.");
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            toast.error(message || 'Neuspješna analiza dokumenta.');
             setAnalyzing(false);
             setProgress(0);
         }
@@ -144,9 +238,14 @@ export default function Step1Upload({ onNext, onBack }: Props) {
             {!analyzing ? (
                 <div className="flex-1 flex flex-col items-center justify-center">
                     <div
-                        {...getRootProps()}
-                        className={`w-full max-w-lg p-12 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer ${isDragActive ? "border-primary bg-primary/5 scale-[1.02]" : "border-white/10 hover:border-white/20"
-                            }`}
+                        {...getRootProps({
+                            onDragOver: handleDragOver,
+                            onDragEnter: handleDragOver,
+                            onDragLeave: handleDragLeave,
+                            onDrop: handleDrop,
+                        })}
+                        className={`w-full max-w-lg p-12 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer ${isDragActive || externalDragActive ? "border-cyan-400 bg-cyan-500/10 scale-[1.02]" : "border-white/10 hover:border-white/20"}
+                            `}
                     >
                         <input {...getInputProps()} />
                         <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">

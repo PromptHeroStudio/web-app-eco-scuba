@@ -25,10 +25,9 @@ export default function ProjectCard({ title, donor, status, progress, dueDate, o
 
   return (
     <motion.div
-      whileHover={{ y: -4, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)" }}
+      whileHover={{ y: -4 }}
       onClick={onClick}
-      className="group relative rounded-2xl border border-border bg-bg-secondary p-6 
-                 transition-all duration-300 cursor-pointer overflow-hidden shadow-sm"
+      className="group relative rounded-[24px] border border-[#D6E6F5] bg-white p-6 transition-all duration-300 cursor-pointer overflow-hidden shadow-[0_8px_24px_rgba(47,128,237,0.08)]"
     >
       {/* Subtle Gradient Glow */}
       <div className="absolute -right-20 -top-20 h-40 w-40 rounded-full bg-brand/5 blur-3xl group-hover:bg-brand/10 transition-colors" />

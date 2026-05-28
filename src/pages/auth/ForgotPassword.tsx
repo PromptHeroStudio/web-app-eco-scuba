@@ -34,10 +34,11 @@ export default function ForgotPassword() {
         description: "Poslan vam je link za reset lozinke. Provjerite inbox i spam.",
       });
       navigate("/login");
-    } catch (error: any) {
+    } catch (caughtError: unknown) {
+      const errorMessage = caughtError instanceof Error ? caughtError.message : String(caughtError || "Pokušajte ponovo kasnije.");
       toast({
         title: "Greška pri resetovanju lozinke",
-        description: error.message || "Pokušajte ponovo kasnije.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

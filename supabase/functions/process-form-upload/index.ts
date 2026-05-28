@@ -87,8 +87,12 @@ Deno.serve(async (req: Request) => {
 
         console.log(`[AI Gateway] source: ${source} | text: ${text_content?.length ?? 0} chars | hasUsableText: ${hasUsableText} | hasPDF: ${!!pdf_base64}`);
 
+        type AiMessage =
+            | { type: 'text'; text: string }
+            | { type: 'image_url'; image_url: { url: string } };
+
         // Build messages array - use multimodal when text extraction failed
-        const userContent: any[] = [];
+        const userContent: AiMessage[] = [];
 
         if (hasUsableText) {
             // Text extraction worked - send text only (faster, cheaper)
@@ -161,10 +165,11 @@ Deno.serve(async (req: Request) => {
             { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
 
-    } catch (error: any) {
-        console.error('[Error]', error.message);
+    } catch (caughtError: unknown) {
+        const errorMessage = caughtError instanceof Error ? caughtError.message : String(caughtError || 'Unknown error');
+        console.error('[Error]', errorMessage);
         return new Response(
-            JSON.stringify({ error: 'Internal server error', details: error.message }),
+            JSON.stringify({ error: 'Internal server error', details: errorMessage }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }

@@ -5,7 +5,7 @@ export interface Profile {
     avatar_url: string | null;
     organization: string;
     role: 'admin' | 'member' | 'guest';
-    notification_prefs: { email: boolean; inapp: boolean };
+    notification_prefs: { email: boolean; inapp: boolean; deadlines: boolean };
     created_at: string;
     updated_at: string;
 }
@@ -27,6 +27,7 @@ export interface Project {
     project_language: 'bs' | 'en';
     tags: string[];
     form_template_url: string | null;
+    public_call_analysis: Record<string, unknown> | null;
     form_template_analysis: FormAnalysis | null;
     apa_state: APAState;
     rip_data: RIPData;
@@ -104,11 +105,29 @@ export interface LocationItem {
     coordinates?: string;
 }
 
+export interface FormTemplateField {
+    field_name: string;
+    field_type: string;
+    required: boolean;
+    label?: string;
+    section?: string;
+    page?: number;
+    options?: string[];
+}
+
 export interface FormAnalysis {
     form_language: string;
     sections: Array<{ key: string; title_original: string; title_bs: string; order: number }>;
     color_scheme: { header_bg: string; header_text: string; accent: string };
     has_logo: boolean;
+    fields?: FormTemplateField[];
+    field_to_section_map?: Record<string, string>;
+    field_count?: number;
+    page_count?: number;
+    detected_language?: string;
+    form_type?: string;
+    layout?: string;
+    raw_summary?: string;
 }
 
 export interface ChangeLogEntry {

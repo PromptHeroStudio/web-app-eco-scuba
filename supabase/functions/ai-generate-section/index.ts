@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -10,12 +9,59 @@ const corsHeaders = {
 const GEMINI_MODELS = ['gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-pro'];
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6-20251001';
 
+interface MessagePayload {
+  role: string;
+  content?: string;
+  [key: string]: unknown;
+}
+
+type AIOutputChunk = { text?: string; [key: string]: unknown };
+
+type OpenAIResponse = {
+  output_text?: string;
+  output?: unknown;
+  completion?: string;
+  choices?: Array<{ message?: { content?: string } }>; 
+  [key: string]: unknown;
+};
+
+function normalizeErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (typeof error === 'object' && error !== null) {
+    if ('message' in error && typeof (error as Record<string, unknown>).message === 'string') {
+      return (error as Record<string, unknown>).message as string;
+    }
+    return JSON.stringify(error);
+  }
+  return String(error);
+}
+
+function cleanAIOutput(text: string): string {
+  return text
+    .replace(/```(?:html)?\n?/gi, '')
+    .replace(/```/g, '')
+    .replace(/\[FIX-[0-9]{2}\]/g, '')
+    .replace(/<\/??pre>/gi, '')
+    .trim();
+}
+
 const APA_SYSTEM_PROMPT = `
 ================================================================================
-APA + RIP + WA — SISTEMSKE INSTRUKCIJE v3.1
+APA + RIP + WA — ULTIMATIVNI EXPERT PROMPT v4.0
 Za: ECO SCUBA Sekcija — Klub vodenih sportova "S.C.U.B.A.", Sarajevo, BiH
-Interna operativna verzija: Engleski
-Korisnički output: Bosanski (obavezno za sav korisnički sadržaj)
+Tone: hladno-profesionalan, administrativan i stručan.
+Role: Senior Project Manager sa 30+ godina iskustva u BiH javnom sektoru, međunarodnim grantovima i upravljanju projektima okoliša.
+Output: Bosanski HTML sadržaj, bez pozivnog teksta, bez marketing fraza i bez korisničkih disclaimera.
+STRICT RULE: Output must be raw HTML only. Do NOT wrap the output in markdown code fences such as ```html or ```. Do NOT output any markdown syntax, headings, or internal references like FIX-05, FIX-01, etc.
+STRICT RULE: Use only verified facts from project_context.rip_data, project_context.public_call_analysis, project_context.apa_collected_data, and confirmed project metadata. If a requested fact is missing, do NOT invent it; instead insert [UNESITE PODATAK] and preserve an expert professional tone.
+STRICT RULE: Every section must include institutional citations to KVS S.C.U.B.A. and ECO SCUBA, including SSI Diamond Center 2024 and Blue Oceans Award credentials where relevant.
+STRICT RULE: Each narrative section must be detailed and substantive, with a minimum of 500 words. Short paragraphs and generic summaries are unacceptable.
+STRICT RULE: The project work plan must be organized into exactly three phases: Inicijalna faza, Izvedbena faza, and Završna faza, and each phase must specify duration in days.
+STRICT RULE: Do not generate any text block with the words Disclaimer or Obavijest.
+STRICT RULE: Do not use phrases such as "Dobrodošli", "Dobrodošli na naš projekt", "Nadamo se da ćemo", "Važno je reći", "Cilj našeg projekta je", "Verujemo da", "Zajedno možemo", "Naš tim je posvećen", "U cilju poboljšanja". Replace them with professional alternatives such as "Projektna intervencija adresira...", "Projektni ishodi osiguravaju...", or "Analitički podaci indiciraju...".
+STRICT RULE: If the original PDF form contains a staff or budget table, preserve row/column structure in the generated content and map instructors into table-like rows.
+STRICT RULE: Use terms: intervencijska logika, indikatori učinka, analiza dionika, održivost ishoda, operativni plan, usklađenost sa zakonom o vodama FBiH.
 ================================================================================
 
 CHANGELOG v3.1 — Novi protokoli uz zadržavanje svih v2.0 protokola:
@@ -43,6 +89,9 @@ Ti si APA (AI Prompting Assistant), sistem za pisanje projektnih prijedloga
 s emuliranom ekspertizom od 30+ godina u oblasti zaštite okoliša, vodne ekologije,
 zaštite biodiverziteta, vodenih sportova, omladinske edukacije i razvoja
 civilnog društva — s ekskluzivnim fokusom na Bosnu i Hercegovinu.
+APA je utemeljen na 27 godina iskustva Kluba vodenih sportova "S.C.U.B.A." i ECO SCUBA
+u razvoju vodenih i okolišnih projekata, uz korištenje SSI standarda i Blue Oceans
+pristupa u radu s lokalnim zajednicama.
 
 Djeluješ u ime:
   ECO SCUBA Sekcija
@@ -266,18 +315,29 @@ STRUKTURA STATE REGISTRA (čuvati interno u Markdown formatu):
 [Sažetak ključnih RIP nalaza]
 `;
 
-function parseOpenAIOutput(data: any): string {
+function isRecordArray(value: unknown): value is Array<Record<string, unknown>> {
+  return Array.isArray(value) && value.every(item => typeof item === 'object' && item !== null);
+}
+
+function parseOpenAIOutput(data: unknown): string {
   if (!data) return '';
   if (typeof data === 'string') return data;
   if (Array.isArray(data)) {
     return data.map(item => parseOpenAIOutput(item)).join('');
   }
-  if (data.output_text) return data.output_text;
-  if (data.output && Array.isArray(data.output)) {
-    return data.output.map((el: any) => parseOpenAIOutput(el)).join('');
-  }
-  if (data.output && typeof data.output === 'object' && Array.isArray(data.output[0]?.content)) {
-    return data.output[0].content.map((chunk: any) => chunk?.text || '').join('');
+  if (typeof data === 'object' && data !== null) {
+    const record = data as Record<string, unknown>;
+    if (typeof record.output_text === 'string') return record.output_text;
+    if (isRecordArray(record.output)) {
+      return record.output.map(el => parseOpenAIOutput(el)).join('');
+    }
+    const firstOutput = Array.isArray(record.output) ? record.output[0] : record.output;
+    if (typeof firstOutput === 'object' && firstOutput !== null) {
+      const content = (firstOutput as Record<string, unknown>).content;
+      if (isRecordArray(content)) {
+        return content.map(chunk => typeof chunk.text === 'string' ? chunk.text : '').join('');
+      }
+    }
   }
   return '';
 }
@@ -350,8 +410,8 @@ async function getAIResponse(prompt: string): Promise<string> {
     if (!key) break;
     try {
       return await callGemini(model, key, prompt);
-    } catch (err: any) {
-      errors.push(err.message);
+    } catch (err: unknown) {
+      errors.push(normalizeErrorMessage(err));
     }
   }
 
@@ -359,17 +419,17 @@ async function getAIResponse(prompt: string): Promise<string> {
   if (anthropicKey) {
     try {
       return await callAnthropic(anthropicKey, prompt);
-    } catch (err: any) {
-      errors.push(err.message);
+    } catch (err: unknown) {
+      errors.push(normalizeErrorMessage(err));
     }
   }
 
   throw new Error(errors.length > 0 ? errors.join(' | ') : 'No AI key configured.');
 }
 
-function buildUserPrompt(projectContext: any, sectionKey: string, protocol: string, messages: any[]): string {
+function buildUserPrompt(projectContext: unknown, sectionKey: string, protocol: string, messages: MessagePayload[]): string {
   const contextSummary = JSON.stringify(projectContext || {}, null, 2);
-  const history = messages.map((msg: any) => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n\n');
+  const history = messages.map((msg) => `${msg.role.toUpperCase()}: ${msg.content ?? ''}`).join('\n\n');
 
   return `${APA_SYSTEM_PROMPT}
 
@@ -383,7 +443,20 @@ ${history}
 INSTRUCTIONS:
 - Output MUST be valid HTML when protocol is RIP or WA.
 - Use bosanski jezik za sav korisnički sadržaj.
-- Include the required disclaimer in every WA output.
+- Do NOT output any markdown fences, backticks, or code blocks.
+- Do NOT output any internal protocol labels or instruction codes such as FIX-05, FIX-01, etc.
+- Do NOT include any disclaimer text or disclaimer box in the WA output; disclaimer is rendered by frontend.
+- Do not generate any text with the words Disclaimer or Obavijest.
+- Each section must be detailed and substantively long, with a minimum of 500 words.
+- Use the following terminology in the body: intervencijska logika, indikatori učinka, analiza dionika, održivost ishoda, operativni plan, usklađenost sa zakonom o vodama FBiH.
+- Every section must include institutional citations to KVS S.C.U.B.A. as SSI Diamond Center 2024 and Blue Oceans Award recipient, where relevant.
+- Use project_context.rip_data for GPS coordinates, legal references, and statistics. If a fact is missing, insert [UNESITE PODATAK] and maintain an authoritative, expert tone.
+- Use project_context.public_call_analysis to align each paragraph with a donor scoring criterion from the public call.
+- Each paragraph should directly answer a scoring criterion and use donor terminology wherever possible.
+- The project work plan must be explicitly divided into Inicijalna faza, Izvedbena faza, and Završna faza, with exact duration in days for each phase.
+- If rip_data is incomplete, fall back only to verified facts from project_context.public_call_analysis and project_context.apa_collected_data. Do not invent any evidence or outcomes.
+- If the requested fact is not available in the provided context, state that the evidence is not available rather than hallucinate.
+- If the original PDF form contains a staff or budget table, preserve row/column structure in the generated content and map instructors into table-like rows.
 - For RIP_FAZA_0, produce a structured eligibility analysis in HTML format.
 `;
 }
@@ -394,6 +467,17 @@ function createStreamResponse(text: string) {
     start(controller) {
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`));
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', content: text })}\n\n`));
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' } });
+}
+
+function createErrorStream(message: string) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message })}\n\n`));
       controller.close();
     },
   });
@@ -445,20 +529,31 @@ Deno.serve(async (req: Request) => {
 
     const prompt = buildUserPrompt(project_context, section_key, protocol, messages);
     const aiContent = await getAIResponse(prompt);
+    const rawCleaned = cleanAIOutput(aiContent);
+    const finalOutput = rawCleaned
+      .replace(/\bDisclaimer\b/gi, '')
+      .replace(/\bObavijest\b/gi, '')
+      .replace(/Dobrodošli na naš projekt/gi, 'Projektna intervencija adresira')
+      .replace(/Nadamo se da ćemo/gi, 'Projektni ishodi osiguravaju')
+      .replace(/Važno je reći/gi, 'Analitički podaci indiciraju')
+      .replace(/FIX-[0-9]{2}/g, '')
+      .replace(/```(?:html)?|```/gi, '')
+      .trim();
 
     if (project_id !== 'preview') {
       await supabaseAdmin.from('ai_conversations').insert({
         project_id,
         section_id: null,
         protocol,
-        messages: [...messages, { role: 'assistant', content: aiContent }],
-        token_count: aiContent.length,
+        messages: [...messages, { role: 'assistant', content: finalOutput }],
+        token_count: finalOutput.length,
       });
     }
 
-    return createStreamResponse(aiContent);
-  } catch (error: any) {
-    console.error('[ai-generate-section] Error:', error);
-    return new Response(JSON.stringify({ type: 'error', message: error.message || 'Internal server error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return createStreamResponse(finalOutput);
+  } catch (caughtError: unknown) {
+    const message = normalizeErrorMessage(caughtError);
+    console.error('[ai-generate-section] Error:', message);
+    return createErrorStream(message || 'AI Model Error');
   }
 });

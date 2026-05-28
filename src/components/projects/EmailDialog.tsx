@@ -1,5 +1,6 @@
+import type { FormEvent } from "react";
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,20 +20,31 @@ export default function EmailDialog({ open, onOpenChange, projectTitle }: Props)
     const [success, setSuccess] = useState(false);
     const { toast } = useToast();
 
-    const handleSend = async (e: React.FormEvent<HTMLFormElement>) => {
+    const handleSend = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const formData = new FormData(e.currentTarget);
         const data = Object.fromEntries(formData.entries());
 
         setLoading(true);
         try {
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError || !session?.access_token) {
+                throw new Error('Nije moguće dohvatiti aktivnu sesiju za slanje emaila. Molimo se ponovo prijavite.');
+            }
+
+            const payload = {
+                recipient_email: data.email,
+                recipient_name: data.name,
+                project_title: projectTitle,
+                message: data.message,
+            };
+
             const { error } = await supabase.functions.invoke('send-project-email', {
-                body: {
-                    recipient_email: data.email,
-                    recipient_name: data.name,
-                    project_title: projectTitle,
-                    message: data.message,
-                }
+                body: JSON.stringify(payload),
+                headers: {
+                    Authorization: `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json',
+                },
             });
 
             if (error) throw error;
@@ -41,8 +53,9 @@ export default function EmailDialog({ open, onOpenChange, projectTitle }: Props)
                 onOpenChange(false);
                 setSuccess(false);
             }, 2000);
-        } catch (error: any) {
-            toast({ title: "Greška", description: error.message, variant: "destructive" });
+        } catch (caughtError: unknown) {
+            const errorMessage = caughtError instanceof Error ? caughtError.message : String(caughtError);
+            toast({ title: "Greška", description: errorMessage, variant: "destructive" });
         } finally {
             setLoading(false);
         }
@@ -55,6 +68,9 @@ export default function EmailDialog({ open, onOpenChange, projectTitle }: Props)
                     <DialogTitle className="flex items-center gap-2">
                         <Mail className="h-5 w-5 text-primary" /> Posalji emailom
                     </DialogTitle>
+                    <DialogDescription>
+                        Pošalji email notifikaciju direktno primaocu projekta uz referencu njegovog naziva i poruke.
+                    </DialogDescription>
                 </DialogHeader>
 
                 {success ? (

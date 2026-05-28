@@ -12,8 +12,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+interface SectionSummary {
+    id?: string;
+    section_title_bs?: string;
+}
+
 interface Props {
-    sections: any[];
+    sections: SectionSummary[];
     onComplete: () => void;
     onCancel: () => void;
 }

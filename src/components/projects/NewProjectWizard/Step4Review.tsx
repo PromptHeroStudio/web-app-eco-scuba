@@ -1,9 +1,17 @@
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, Rocket, CheckCircle2, FileText, Globe } from "lucide-react";
 
+interface ReviewData {
+    title?: string;
+    donor_name?: string;
+    project_language?: string;
+    hasTemplate?: boolean;
+    public_call_analysis?: Record<string, unknown>;
+}
+
 interface Props {
-    data: any;
-    onNext: (data: any) => void;
+    data: ReviewData;
+    onNext: (data: Partial<ReviewData>) => void;
     onBack: () => void;
 }
 
@@ -40,6 +48,13 @@ export default function Step4Review({ data, onNext, onBack }: Props) {
                         </div>
                     </div>
                 </div>
+
+                {data.public_call_analysis?.recommended_program && (
+                    <div className="bg-bg-tertiary p-4 rounded-xl border border-white/5">
+                        <p className="text-[10px] uppercase tracking-widest text-text-dim font-bold mb-2">Odabrani program</p>
+                        <p className="text-sm text-text-primary">{data.public_call_analysis.recommended_program}</p>
+                    </div>
+                )}
 
                 <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6">
                     <div className="flex items-center gap-3 mb-4">

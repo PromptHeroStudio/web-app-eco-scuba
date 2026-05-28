@@ -1,76 +1,179 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useUIStore } from "@/store/uiStore";
-import {
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-    PieChart,
-    Pie,
-    Cell,
-    LineChart,
-    Line,
-    AreaChart,
-    Area
-} from "recharts";
 import {
     FolderOpen,
     Clock,
     CheckCircle2,
-    TrendingUp,
-    AlertCircle
+    Users,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import type { CollaborationTask, ProjectSection } from "@/types";
 
-const projectStatusData = [
-    { name: 'Draft', value: 4, color: '#94a3b8' },
-    { name: 'U toku', value: 8, color: '#0ea5e9' },
-    { name: 'Na pregledu', value: 3, color: '#f59e0b' },
-    { name: 'Završeno', value: 12, color: '#10b981' },
-    { name: 'Arhivirano', value: 2, color: '#6b7280' },
-];
+const AnalyticsCharts = lazy(() => import("@/components/analytics/AnalyticsCharts"));
 
-const sectionProgressData = [
-    { name: 'Projekat A', odobreno: 8, na_pregledu: 2, u_toku: 3 },
-    { name: 'Projekat B', odobreno: 5, na_pregledu: 4, u_toku: 4 },
-    { name: 'Projekat C', odobreno: 12, na_pregledu: 1, u_toku: 0 },
-    { name: 'Projekat D', odobreno: 3, na_pregledu: 2, u_toku: 8 },
-    { name: 'Projekat E', odobreno: 7, na_pregledu: 3, u_toku: 3 },
-];
+interface AnalyticsStatusDatum {
+    name: string;
+    value: number;
+    color: string;
+}
 
-const activityData = Array.from({ length: 30 }, (_, i) => ({
-    day: i + 1,
-    approved: Math.floor(Math.random() * 5) + 2
-}));
+interface PendingTaskRow {
+    id: string;
+    title: string;
+    status: string;
+    due_date: string | null;
+    project: { title: string } | null;
+}
+
+interface NextStepRow {
+    id: string;
+    section_title_bs: string;
+    status: string;
+    updated_at: string;
+    project: { title: string } | null;
+}
+
+interface ApprovalTrendDatum {
+    day: number;
+    approved: number;
+}
 
 export default function Analytics() {
     const { setPageTitle } = useUIStore();
     const [stats, setStats] = useState({
         totalProjects: 0,
         awaitingApproval: 0,
-        openTasks: 0
+        openTasks: 0,
+        activeCollaborators: 0,
     });
+    const [projectStatusData, setProjectStatusData] = useState<AnalyticsStatusDatum[]>([]);
+    const [sectionPieData, setSectionPieData] = useState<AnalyticsStatusDatum[]>([]);
+    const [approvalTrend, setApprovalTrend] = useState<ApprovalTrendDatum[]>([]);
+    const [pendingTasks, setPendingTasks] = useState<PendingTaskRow[]>([]);
+    const [nextSteps, setNextSteps] = useState<NextStepRow[]>([]);
+
+    const fetchStats = useCallback(async () => {
+        try {
+            const [
+                projectsCountResponse,
+                awaitingApprovalResponse,
+                openTasksResponse,
+                collaboratorsResponse,
+                approvedSectionsResponse,
+                pendingSectionsResponse,
+                draftProjectsResponse,
+                inProgressProjectsResponse,
+                reviewProjectsResponse,
+                completedProjectsResponse,
+                archivedProjectsResponse,
+                approvalTrendResponse,
+                pendingTaskResponse,
+                nextStepsResponse,
+            ] = await Promise.all([
+                supabase.from('projects').select('id', { count: 'exact', head: true }),
+                supabase.from('project_sections').select('id', { count: 'exact', head: true }).eq('status', 'awaiting_approval'),
+                supabase.from('collaboration_tasks').select('id', { count: 'exact', head: true }).eq('status', 'open'),
+                supabase.from('project_collaborators').select('id', { count: 'exact', head: true }).eq('status', 'accepted'),
+                supabase.from('project_sections').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
+                supabase.from('project_sections').select('id', { count: 'exact', head: true }).in('status', ['pending', 'awaiting_approval', 'revision_requested']),
+                supabase.from('projects').select('id', { count: 'exact', head: true }).eq('status', 'draft'),
+                supabase.from('projects').select('id', { count: 'exact', head: true }).eq('status', 'in_progress'),
+                supabase.from('projects').select('id', { count: 'exact', head: true }).eq('status', 'review'),
+                supabase.from('projects').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+                supabase.from('projects').select('id', { count: 'exact', head: true }).eq('status', 'archived'),
+                supabase.from<ProjectSection>('project_sections')
+                    .select('approved_at, status')
+                    .eq('status', 'approved')
+                    .gte('approved_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+                    .not('approved_at', 'is', null),
+                supabase.from<PendingTaskRow>('collaboration_tasks')
+                    .select('id,title,status,due_date,project:projects(title)')
+                    .in('status', ['open', 'in_progress'])
+                    .order('due_date', { ascending: true })
+                    .limit(6),
+                supabase.from<NextStepRow>('project_sections')
+                    .select('id,section_title_bs,status,updated_at,project:projects(title)')
+                    .in('status', ['pending', 'awaiting_approval', 'revision_requested'])
+                    .order('updated_at', { ascending: false })
+                    .limit(6),
+            ]);
+
+            setStats({
+                totalProjects: projectsCountResponse.count ?? 0,
+                awaitingApproval: awaitingApprovalResponse.count ?? 0,
+                openTasks: openTasksResponse.count ?? 0,
+                activeCollaborators: collaboratorsResponse.count ?? 0,
+            });
+
+            setSectionPieData([
+                { name: 'Odobrene', value: approvedSectionsResponse.count ?? 0, color: '#10b981' },
+                { name: 'Na čekanju', value: pendingSectionsResponse.count ?? 0, color: '#f59e0b' },
+            ]);
+
+            setProjectStatusData([
+                { name: 'Nacrti', value: draftProjectsResponse.count ?? 0, color: '#94a3b8' },
+                { name: 'U toku', value: inProgressProjectsResponse.count ?? 0, color: '#0ea5e9' },
+                { name: 'Pregled', value: reviewProjectsResponse.count ?? 0, color: '#f59e0b' },
+                { name: 'Završeni', value: completedProjectsResponse.count ?? 0, color: '#10b981' },
+                { name: 'Arhivirano', value: archivedProjectsResponse.count ?? 0, color: '#6b7280' },
+            ]);
+
+            const approvedRows = approvalTrendResponse.data ?? [];
+            const trendMap = approvedRows.reduce<Record<string, number>>((acc, row) => {
+                if (!row.approved_at) return acc;
+
+                const dateKey = new Date(row.approved_at).toISOString().slice(0, 10);
+                acc[dateKey] = (acc[dateKey] ?? 0) + 1;
+                return acc;
+            }, {});
+
+            const trendDays = Array.from({ length: 30 }, (_, index) => {
+                const date = new Date(Date.now() - (29 - index) * 24 * 60 * 60 * 1000);
+                const key = date.toISOString().slice(0, 10);
+                return {
+                    day: index + 1,
+                    approved: trendMap[key] ?? 0,
+                };
+            });
+
+            setApprovalTrend(trendDays);
+
+            if (pendingTaskResponse.error) {
+                throw pendingTaskResponse.error;
+            }
+
+            setPendingTasks(pendingTaskResponse.data ?? []);
+
+            if (nextStepsResponse.error) {
+                throw nextStepsResponse.error;
+            }
+
+            setNextSteps(nextStepsResponse.data ?? []);
+        } catch (error) {
+            console.error('Analytics fetch error:', error);
+            setStats({
+                totalProjects: 0,
+                awaitingApproval: 0,
+                openTasks: 0,
+                activeCollaborators: 0,
+            });
+            setProjectStatusData([]);
+            setSectionPieData([]);
+            setApprovalTrend([]);
+            setPendingTasks([]);
+            setNextSteps([]);
+        }
+    }, []);
 
     useEffect(() => {
         setPageTitle("Analitika");
-        fetchStats();
-    }, [setPageTitle]);
+        void fetchStats();
+    }, [setPageTitle, fetchStats]);
 
-    const fetchStats = async () => {
-        // In real app, fetch from Supabase
-        // const { count: projectsCount } = await supabase.from('projects').select('*', { count: 'exact', head: true });
-        // const { count: sectionsCount } = await supabase.from('project_sections').select('*', { count: 'exact', head: true }).eq('status', 'awaiting_approval');
-        // const { count: tasksCount } = await supabase.from('collaboration_tasks').select('*', { count: 'exact', head: true }).eq('status', 'open');
-
-        setStats({
-            totalProjects: 29,
-            awaitingApproval: 12,
-            openTasks: 8
-        });
+    const formatDueDate = (dateString: string | null) => {
+        if (!dateString) return 'N/A';
+        return new Date(dateString).toLocaleDateString('bs', { day: '2-digit', month: 'short' });
     };
 
     return (
@@ -80,11 +183,12 @@ export default function Analytics() {
             className="space-y-6"
         >
             {/* Stat Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
                 {[
                     { label: "Ukupno projekata", value: stats.totalProjects, icon: FolderOpen, color: "text-blue-500", bg: "bg-blue-500/10" },
                     { label: "Sekcije na čekanju", value: stats.awaitingApproval, icon: Clock, color: "text-amber-500", bg: "bg-amber-500/10" },
                     { label: "Otvoreni zadaci", value: stats.openTasks, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500/10" },
+                    { label: "Aktivni saradnici", value: stats.activeCollaborators, icon: Users, color: "text-violet-500", bg: "bg-violet-500/10" },
                 ].map((stat, i) => (
                     <motion.div
                         key={i}
@@ -104,111 +208,30 @@ export default function Analytics() {
                 ))}
             </div>
 
+            {stats.totalProjects === 0 ? (
+                <div className="p-8 bg-white/90 rounded-2xl border border-blue-100 shadow-[0_12px_32px_rgba(47,128,237,0.08)]">
+                    <h2 className="text-xl font-semibold text-slate-900 mb-3">Još nema podataka za analizu</h2>
+                    <p className="text-sm text-slate-600 max-w-2xl">
+                        Ocean Light Analitika je spremna kada kreirate prvi projekat. Trenutačno nema odobrenih sekcija, zadataka ni aktivnih timova.
+                    </p>
+                </div>
+            ) : (
+                <Suspense fallback={
+                    <div className="grid grid-cols-1 gap-6">
+                        <div className="h-[300px] bg-bg-secondary rounded-2xl border border-border animate-pulse" />
+                        <div className="h-[300px] bg-bg-secondary rounded-2xl border border-border animate-pulse" />
+                        <div className="h-[300px] bg-bg-secondary rounded-2xl border border-border animate-pulse" />
+                    </div>
+                }>
+                <AnalyticsCharts
+                    projectStatusData={projectStatusData}
+                    sectionPieData={sectionPieData}
+                    activityData={approvalTrend}
+                />
+            </Suspense>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Project Status Donut */}
-                <div className="p-6 bg-bg-secondary rounded-2xl border border-border">
-                    <h3 className="text-lg font-bold mb-6">Status projekata</h3>
-                    <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={projectStatusData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={70}
-                                    outerRadius={100}
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                >
-                                    {projectStatusData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} />
-                                    ))}
-                                </Pie>
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#f8fafc' }}
-                                    itemStyle={{ color: '#f8fafc' }}
-                                />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 mt-4">
-                        {projectStatusData.map((item) => (
-                            <div key={item.name} className="flex items-center gap-2">
-                                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
-                                <span className="text-xs text-muted-foreground whitespace-nowrap">{item.name}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Section Progress Bar Chart */}
-                <div className="p-6 bg-bg-secondary rounded-2xl border border-border">
-                    <h3 className="text-lg font-bold mb-6">Napredak po sekcijama (Top 5)</h3>
-                    <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={sectionProgressData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                                <Tooltip
-                                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
-                                />
-                                <Bar dataKey="odobreno" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
-                                <Bar dataKey="na_pregledu" stackId="a" fill="#f59e0b" radius={[0, 0, 0, 0]} />
-                                <Bar dataKey="u_toku" stackId="a" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                    <div className="flex justify-center gap-4 mt-4">
-                        <div className="flex items-center gap-2">
-                            <div className="h-3 w-3 rounded-full bg-[#10b981]" />
-                            <span className="text-xs text-muted-foreground">Odobreno</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div className="h-3 w-3 rounded-full bg-[#f59e0b]" />
-                            <span className="text-xs text-muted-foreground">Na pregledu</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div className="h-3 w-3 rounded-full bg-[#0ea5e9]" />
-                            <span className="text-xs text-muted-foreground">U toku</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Activity Chart */}
-            <div className="p-6 bg-bg-secondary rounded-2xl border border-border">
-                <h3 className="text-lg font-bold mb-6">Aktivnost odobravanja (zadnjih 30 dana)</h3>
-                <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={activityData}>
-                            <defs>
-                                <linearGradient id="colorApproved" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                            <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                            <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
-                            <Area
-                                type="monotone"
-                                dataKey="approved"
-                                stroke="#0ea5e9"
-                                fillOpacity={1}
-                                fill="url(#colorApproved)"
-                                strokeWidth={3}
-                            />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-
-            {/* Tables Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Waiting for Me Table */}
                 <div className="bg-bg-secondary rounded-2xl border border-border overflow-hidden">
                     <div className="p-6 border-b border-border">
                         <h3 className="text-lg font-bold">Čeka se od mene</h3>
@@ -218,34 +241,31 @@ export default function Analytics() {
                             <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                                 <tr>
                                     <th className="px-6 py-3 font-semibold">Projekat</th>
-                                    <th className="px-6 py-3 font-semibold">Sekcija</th>
-                                    <th className="px-6 py-3 font-semibold">Radnja</th>
+                                    <th className="px-6 py-3 font-semibold">Zadatak</th>
+                                    <th className="px-6 py-3 font-semibold">Status</th>
                                     <th className="px-6 py-3 font-semibold">Rok</th>
-                                    <th className="px-6 py-3 font-semibold">Prioritet</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
-                                {[
-                                    { project: "Eco Sarajevo", section: "Budžet", action: "Pregled", due: "Sutra", priority: "High", color: "text-red-500" },
-                                    { project: "Velika aleja", section: "Ciljevi", action: "Dopuna", due: "24. Feb", priority: "Normal", color: "text-blue-500" },
-                                    { project: "Reciklaža 2026", section: "Uvod", action: "Odobrenje", due: "26. Feb", priority: "Low", color: "text-emerald-500" },
-                                ].map((row, i) => (
-                                    <tr key={i} className="hover:bg-muted/30 transition-colors">
-                                        <td className="px-6 py-4 text-sm font-medium">{row.project}</td>
-                                        <td className="px-6 py-4 text-sm font-medium">{row.section}</td>
-                                        <td className="px-6 py-4 text-sm">{row.action}</td>
-                                        <td className="px-6 py-4 text-sm text-muted-foreground">{row.due}</td>
-                                        <td className="px-6 py-4 text-sm">
-                                            <span className={`font-bold ${row.color}`}>{row.priority}</span>
-                                        </td>
+                                {pendingTasks.length > 0 ? (
+                                    pendingTasks.map((task) => (
+                                        <tr key={task.id} className="hover:bg-muted/30 transition-colors">
+                                            <td className="px-6 py-4 text-sm font-medium">{task.project?.title ?? 'Nepoznato'}</td>
+                                            <td className="px-6 py-4 text-sm">{task.title}</td>
+                                            <td className="px-6 py-4 text-sm text-capitalize">{task.status.replace('_', ' ')}</td>
+                                            <td className="px-6 py-4 text-sm text-muted-foreground">{task.due_date ? new Date(task.due_date).toLocaleDateString('bs', { day: '2-digit', month: 'short' }) : 'N/A'}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={4} className="px-6 py-8 text-center text-sm text-muted-foreground">Nema otvorenih zadataka za prikaz.</td>
                                     </tr>
-                                ))}
+                                )}
                             </tbody>
                         </table>
                     </div>
                 </div>
 
-                {/* Next Step Table */}
                 <div className="bg-bg-secondary rounded-2xl border border-border overflow-hidden">
                     <div className="p-6 border-b border-border">
                         <h3 className="text-lg font-bold">Sljedeći korak</h3>
@@ -255,29 +275,26 @@ export default function Analytics() {
                             <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                                 <tr>
                                     <th className="px-6 py-3 font-semibold">Projekat</th>
-                                    <th className="px-6 py-3 font-semibold">Sljedeći korak</th>
-                                    <th className="px-6 py-3 font-semibold">Odgovorna osoba</th>
-                                    <th className="px-6 py-3 font-semibold">Rok</th>
+                                    <th className="px-6 py-3 font-semibold">Sekcija</th>
+                                    <th className="px-6 py-3 font-semibold">Status</th>
+                                    <th className="px-6 py-3 font-semibold">Posljednja izmjena</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
-                                {[
-                                    { project: "Eco Sarajevo", step: "Potpisivanje", person: "Amir S.", due: "28. Feb" },
-                                    { project: "Velika aleja", step: "Slanje donatoru", person: "Emina K.", due: "01. Mar" },
-                                    { project: "Zeleni krovovi", step: "Izrada PDF-a", person: "AI Sistem", due: "Danas" },
-                                ].map((row, i) => (
-                                    <tr key={i} className="hover:bg-muted/30 transition-colors">
-                                        <td className="px-6 py-4 text-sm font-medium">{row.project}</td>
-                                        <td className="px-6 py-4 text-sm">{row.step}</td>
-                                        <td className="px-6 py-4 text-sm flex items-center gap-2">
-                                            <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">
-                                                {row.person.split(' ').map(n => n[0]).join('')}
-                                            </div>
-                                            {row.person}
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-muted-foreground">{row.due}</td>
+                                {nextSteps.length > 0 ? (
+                                    nextSteps.map((step) => (
+                                        <tr key={step.id} className="hover:bg-muted/30 transition-colors">
+                                            <td className="px-6 py-4 text-sm font-medium">{step.project?.title ?? 'Nepoznato'}</td>
+                                            <td className="px-6 py-4 text-sm">{step.section_title_bs}</td>
+                                            <td className="px-6 py-4 text-sm text-capitalize">{step.status.replace('_', ' ')}</td>
+                                            <td className="px-6 py-4 text-sm text-muted-foreground">{new Date(step.updated_at).toLocaleDateString('bs', { day: '2-digit', month: 'short' })}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={4} className="px-6 py-8 text-center text-sm text-muted-foreground">Nema aktivnih sljedećih koraka.</td>
                                     </tr>
-                                ))}
+                                )}
                             </tbody>
                         </table>
                     </div>

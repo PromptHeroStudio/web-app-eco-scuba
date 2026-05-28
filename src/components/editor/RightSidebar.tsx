@@ -4,9 +4,25 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Users, History, CheckCircle, Info, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+interface SectionStatus {
+    id: string;
+    section_title_bs: string;
+    version?: string;
+    status?: 'approved' | 'awaiting_approval' | 'generating' | string;
+}
+
+interface CollaboratorProfile {
+    full_name?: string;
+}
+
+interface CollaboratorItem {
+    profiles?: CollaboratorProfile;
+    role?: string;
+}
+
 interface Props {
-    sections: any[];
-    collaborators: any[];
+    sections: SectionStatus[];
+    collaborators: CollaboratorItem[];
 }
 
 export default function RightSidebar({ sections, collaborators }: Props) {

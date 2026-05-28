@@ -10,13 +10,21 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 const formSchema = z.object({
     title: z.string().min(5, "Naslov mora imati najmanje 5 znakova"),
     donor_name: z.string().min(2, "Ovo polje je obavezno"),
-    project_language: z.enum(["bs", "en"]),
+    project_language: z.enum(["bs", "en", "hr"]),
     priority_area: z.string().optional(),
 });
 
+interface WizardStep2Data {
+    title?: string;
+    donor_name?: string;
+    project_language?: string;
+    priority_area?: string;
+    extractedData?: Record<string, unknown>;
+}
+
 interface Props {
-    data: any;
-    onNext: (data: any) => void;
+    data: WizardStep2Data;
+    onNext: (data: Partial<WizardStep2Data>) => void;
     onBack: () => void;
 }
 

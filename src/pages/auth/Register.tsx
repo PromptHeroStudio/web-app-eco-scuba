@@ -65,8 +65,9 @@ export default function Register() {
         description: "Provjerite svoju email adresu i potvrdite račun prije prijave.",
       });
       navigate("/login");
-    } catch (error: any) {
-      let description = error.message || "Pokušajte ponovo kasnije.";
+    } catch (caughtError: unknown) {
+      const errorMessage = caughtError instanceof Error ? caughtError.message : String(caughtError || "Pokušajte ponovo kasnije.");
+      let description = errorMessage;
       if (/duplicate|already exists|already registered/i.test(description)) {
         description = "Ovaj email je već registrovan. Pokušajte prijavu ili resetujte lozinku.";
       }

@@ -4,10 +4,23 @@ import { ChevronLeft, ChevronRight, Sparkles, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useProjectStore } from "@/store/projectStore";
+
+interface ApiDataMap {
+    title?: string;
+    applicant_name?: string;
+    partners?: string;
+    priority_area?: string;
+    target_group?: string;
+    locations?: string;
+    duration?: string;
+    budget_overview?: string;
+    [key: string]: string | undefined;
+}
 
 interface Props {
-    data: any;
-    onNext: (data: any) => void;
+    data: ApiDataMap;
+    onNext: (data: ApiDataMap) => void;
     onBack: () => void;
 }
 
@@ -72,7 +85,7 @@ const questions = [
 
 export default function Step3APAData({ data, onNext, onBack }: Props) {
     const [currentIdx, setCurrentIdx] = useState(0);
-    const [answers, setAnswers] = useState<any>({
+    const [answers, setAnswers] = useState<Record<string, string>>({
         title: data.title || "",
         applicant_name: data.applicant_name || "KVS S.C.U.B.A.",
         partners: data.partners || "nema partnera",
@@ -83,6 +96,7 @@ export default function Step3APAData({ data, onNext, onBack }: Props) {
         budget_overview: data.budget_overview || "",
     });
     const [isTyping, setIsTyping] = useState(true);
+    const { currentProject, setCurrentProject } = useProjectStore();
 
     const currentQ = questions[currentIdx];
 
@@ -91,6 +105,10 @@ export default function Step3APAData({ data, onNext, onBack }: Props) {
         const timer = setTimeout(() => setIsTyping(false), 500);
         return () => clearTimeout(timer);
     }, [currentIdx]);
+
+    const currentValue = answers[currentQ.id] ?? "";
+    const currentLength = currentValue.length;
+    const isNearLimit = currentLength > 1400;
 
     const handleNext = () => {
         if (currentIdx < questions.length - 1) {
@@ -107,6 +125,31 @@ export default function Step3APAData({ data, onNext, onBack }: Props) {
             onBack();
         }
     };
+
+    useEffect(() => {
+        if (!currentProject) return;
+
+        // Only write back to the store if the collected APA data actually changed.
+        const existing = (currentProject.apa_collected_data as ApiDataMap | undefined) || {};
+        const merged: ApiDataMap = { ...existing, ...answers };
+        try {
+            const existingJson = JSON.stringify(existing);
+            const mergedJson = JSON.stringify(merged);
+            if (existingJson === mergedJson) return; // no changes -> avoid triggering update loop
+        } catch (err) {
+            // fallback: if stringify fails, loosely compare
+            let changed = false;
+            for (const k of Object.keys(merged)) {
+                if (existing[k] !== merged[k]) { changed = true; break; }
+            }
+            if (!changed) return;
+        }
+
+        setCurrentProject({
+            ...currentProject,
+            apa_collected_data: merged,
+        });
+    }, [answers, currentProject, setCurrentProject]);
 
     return (
         <div className="flex flex-col h-full">
@@ -139,7 +182,7 @@ export default function Step3APAData({ data, onNext, onBack }: Props) {
                         transition={{ duration: 0.3 }}
                         className="w-full"
                     >
-                        <div className="p-10 bg-bg-tertiary/50 backdrop-blur-2xl rounded-[32px] border border-white/5 shadow-2xl relative">
+                        <div style={{ transform: 'translateZ(0)' }} className="p-10 bg-bg-tertiary/50 backdrop-blur-2xl rounded-[20px] border border-white/5 shadow-[0_8px_24px_rgba(47,128,237,0.08)] relative">
                             <div className="absolute -top-4 -left-4 h-12 w-12 rounded-2xl bg-brand flex items-center justify-center shadow-xl shadow-brand/20 border border-white/10">
                                 <span className="text-white font-bold text-lg">{currentIdx + 1}</span>
                             </div>
@@ -152,14 +195,24 @@ export default function Step3APAData({ data, onNext, onBack }: Props) {
                             </p>
 
                             {currentQ.type === 'textarea' ? (
-                                <Textarea
-                                    autoFocus
-                                    rows={4}
-                                    placeholder={currentQ.placeholder}
-                                    value={answers[currentQ.id]}
-                                    onChange={(e) => setAnswers({ ...answers, [currentQ.id]: e.target.value })}
-                                    className="bg-bg-surface/50 border-white/10 focus:border-brand/50 focus:ring-4 focus:ring-brand/10 transition-all resize-none text-base p-6 rounded-2xl"
-                                />
+                                <>
+                                    <Textarea
+                                        autoFocus
+                                        rows={4}
+                                        placeholder={currentQ.placeholder}
+                                        value={answers[currentQ.id]}
+                                        maxLength={1500}
+                                        onChange={(e) => setAnswers({ ...answers, [currentQ.id]: e.target.value })}
+                                        className="bg-bg-surface/50 border-white/10 focus:border-brand/50 focus:ring-4 focus:ring-brand/10 transition-all resize-none text-base p-6 rounded-2xl"
+                                    />
+                                    <motion.div
+                                        initial={false}
+                                        animate={{ color: isNearLimit ? '#f97316' : '#94a3b8' }}
+                                        className="mt-2 text-right text-xs font-medium"
+                                    >
+                                        {currentLength} / 1500
+                                    </motion.div>
+                                </>
                             ) : (
                                 <Input
                                     autoFocus

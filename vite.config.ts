@@ -21,4 +21,24 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('recharts') || id.includes('pdfjs-dist')) {
+              return 'heavy-libs';
+            }
+            if (id.includes('@radix-ui') || id.includes('lucide-react') || id.includes('cmdk')) {
+              return 'ui-libs';
+            }
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+              return 'vendor';
+            }
+            return 'vendor';
+          }
+        },
+      },
+    },
+  },
 }));
