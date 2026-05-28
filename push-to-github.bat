@@ -10,78 +10,85 @@ echo        ECO SCUBA - AUTOMATSKI GITHUB PUSH
 echo ==========================================================
 echo.
 
-:: DEFINICIJA PROJEKTA
+:: PROJEKT
 set PROJECT_DIR=C:\DAVOR_PRIVATE\Locker\PRIVATE\AI\Eco_Scuba
-set REPO_URL=https://github.com/mulalicd/eco-scuba
+set REPO_URL=https://github.com/PromptHeroStudio/web-app-eco-scuba.git
 
-:: PRELAZAK U FOLDER
 cd /d "%PROJECT_DIR%"
 
 if errorlevel 1 (
-    echo [GRESKA] Folder ne postoji:
-    echo %PROJECT_DIR%
+    echo [GRESKA] Folder nije pronađen.
     pause
     exit /b
 )
 
-:: GIT INIT AKO NE POSTOJI
+:: PREKINI ZAGLAVLJENI MERGE AKO POSTOJI
+git merge --abort >nul 2>&1
+
+:: GIT INIT AKO TREBA
 if not exist ".git\" (
-    echo [INFO] Git nije inicijalizovan. Pokrecem git init...
+    echo [INFO] Inicijalizujem Git...
     git init
-
-    echo [INFO] Dodajem GitHub remote...
-    git remote add origin %REPO_URL%
-
-    echo [INFO] Postavljam main branch...
-    git branch -M main
 )
 
-:: PROVJERA REMOTE URL
+:: FORCE UPDATE REMOTE
 git remote remove origin >nul 2>&1
 git remote add origin %REPO_URL%
 
 echo.
-echo [SYSTEM] Trenutni status:
-git status -s
+git status
 
 echo.
 set /p msg="Commit poruka (ENTER = Auto Backup): "
 
 if "!msg!"=="" (
-    for /f %%i in ('powershell -command "Get-Date -Format yyyy-MM-dd_HH-mm-ss"') do set msg=Backup %%i
+    for /f %%i in ('powershell -command "Get-Date -Format yyyy-MM-dd_HH-mm-ss"') do (
+        set msg=Backup %%i
+    )
 )
 
 echo.
-echo [1/4] Dodavanje fajlova...
+echo [1/5] Git Add...
 git add .
 
 echo.
-echo [2/4] Commit...
+echo [2/5] Commit...
 git commit -m "!msg!"
 
 echo.
-echo [3/4] Pull sa GitHub...
-git pull origin main --allow-unrelated-histories --no-rebase
+echo [3/5] Fetch...
+git fetch origin
 
 echo.
-echo [4/4] Push na GitHub...
-git push -u origin main
+echo [4/5] Pull Rebase...
+git pull --rebase origin main
 
-if %errorlevel% neq 0 (
+if errorlevel 1 (
     echo.
-    echo [INFO] Pokusavam fallback na master...
-    git push -u origin master
+    echo =========================================
+    echo REBASE CONFLICT DETECTED
+    echo Resolve conflicts manually.
+    echo =========================================
+    pause
+    exit /b
 )
 
-if %errorlevel% equ 0 (
+echo.
+echo [5/5] Push...
+git push -u origin main
+
+if errorlevel 1 (
     echo.
-    echo ==========================================================
-    echo [USPJEH] ECO SCUBA uspjesno pushan na GitHub!
-    echo Repo: %REPO_URL%
-    echo ==========================================================
+    echo =========================================
+    echo PUSH FAILED
+    echo Check GitHub authentication.
+    echo =========================================
 ) else (
     echo.
-    echo [GRESKA] Push nije uspio.
+    echo =========================================
+    echo PUSH USPJESAN
+    echo Repo: %REPO_URL%
+    echo =========================================
 )
 
 pause
