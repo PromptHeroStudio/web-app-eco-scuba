@@ -1,88 +1,87 @@
 @echo off
 SETLOCAL EnableDelayedExpansion
 
-:: Set colors for the console
 color 0A
-
-title ECO SCUBA - GitHub Backup
+title ECO SCUBA - GitHub Auto Push
 
 echo.
-echo  ==========================================================
-echo            ECO SCUBA - GITHUB PUSH UTILITY
-echo  ==========================================================
+echo ==========================================================
+echo        ECO SCUBA - AUTOMATSKI GITHUB PUSH
+echo ==========================================================
 echo.
 
-:: Check if .git directory exists
+:: DEFINICIJA PROJEKTA
+set PROJECT_DIR=C:\DAVOR_PRIVATE\Locker\PRIVATE\AI\Eco_Scuba
+set REPO_URL=https://github.com/mulalicd/eco-scuba
+
+:: PRELAZAK U FOLDER
+cd /d "%PROJECT_DIR%"
+
+if errorlevel 1 (
+    echo [GRESKA] Folder ne postoji:
+    echo %PROJECT_DIR%
+    pause
+    exit /b
+)
+
+:: GIT INIT AKO NE POSTOJI
 if not exist ".git\" (
-    echo  [!] Git nije inicijalizovan u ovom folderu.
-    set /p init=" Zelite li inicijalizovati Git sada? (d/n): "
-    if /i "!init!"=="d" (
-        git init
-        echo  [OK] Git inicijalizovan.
-    ) else (
-        echo  [INFO] Prekidam operaciju.
-        pause
-        exit /b
-    )
+    echo [INFO] Git nije inicijalizovan. Pokrecem git init...
+    git init
+
+    echo [INFO] Dodajem GitHub remote...
+    git remote add origin %REPO_URL%
+
+    echo [INFO] Postavljam main branch...
+    git branch -M main
 )
 
-:: Check for remote
-git remote -v | findstr "push" > nul
-if %errorlevel% neq 0 (
-    echo  [UPOZORENJE] Remote repozitorij nije podesen.
-    echo  [HELP] Koristite: git remote add origin URL_REPOZITORIJA
-    set /p remote_url=" Unesite GitHub URL (ili ostavite prazno za prekid): "
-    if "!remote_url!"=="" (
-        pause
-        exit /b
-    ) else (
-        git remote add origin !remote_url!
-        echo  [OK] Remote 'origin' je dodan.
-    )
-)
+:: PROVJERA REMOTE URL
+git remote remove origin >nul 2>&1
+git remote add origin %REPO_URL%
 
 echo.
-echo  [SYSTEM] Skeniranje promjena...
+echo [SYSTEM] Trenutni status:
 git status -s
 
 echo.
-set /p msg=" Unesite commit poruku (prazno za 'Backup [timestamp]'): "
+set /p msg="Commit poruka (ENTER = Auto Backup): "
+
 if "!msg!"=="" (
-    for /f "tokens=2-4 delims=/ " %%a in ('date /t') do (set mydate=%%c-%%a-%%b)
-    for /f "tokens=1-2 delims=: " %%a in ('time /t') do (set mytime=%%a:%%b)
-    set msg=Backup !mydate! !mytime!
+    for /f %%i in ('powershell -command "Get-Date -Format yyyy-MM-dd_HH-mm-ss"') do set msg=Backup %%i
 )
 
 echo.
-echo  [1/3] Dodavanje fajlova...
+echo [1/4] Dodavanje fajlova...
 git add .
 
-echo  [2/3] Kreiranje commit-a: "!msg!"...
+echo.
+echo [2/4] Commit...
 git commit -m "!msg!"
 
-echo  [3/3] Sinhronizacija s remote repozitorijem...
-git pull origin main --rebase
-if %errorlevel% neq 0 (
-    echo  [INFO] Pull/rebase nije uspio, pokusavam bez rebase...
-    git pull origin main --no-rebase
-)
+echo.
+echo [3/4] Pull sa GitHub...
+git pull origin main --allow-unrelated-histories --no-rebase
 
-echo  [3/3] Slanje na GitHub (push)...
-git push origin main
+echo.
+echo [4/4] Push na GitHub...
+git push -u origin main
+
 if %errorlevel% neq 0 (
-    echo  [INFO] Pokusavam push na 'master' granu...
-    git push origin master
+    echo.
+    echo [INFO] Pokusavam fallback na master...
+    git push -u origin master
 )
 
 if %errorlevel% equ 0 (
     echo.
-    echo  ==========================================================
-    echo  [USPJEH] Projekat je uspjesno poslan na GitHub!
-    echo  ==========================================================
+    echo ==========================================================
+    echo [USPJEH] ECO SCUBA uspjesno pushan na GitHub!
+    echo Repo: %REPO_URL%
+    echo ==========================================================
 ) else (
     echo.
-    echo  [GRESKA] Slanje na GitHub nije uspjelo.
-    echo  Provjerite internet konekciju i dozvole za repozitorij.
+    echo [GRESKA] Push nije uspio.
 )
 
 pause
